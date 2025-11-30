@@ -1,0 +1,587 @@
+// src/screens/GeneralScreen/GeneralScreen.js
+// Schermata principale con classifiche
+
+import React, { useState, useCallback } from 'react';
+import { 
+  View, 
+  Text, 
+  StyleSheet, 
+  SafeAreaView,
+  StatusBar,
+  ScrollView,
+  TouchableOpacity,
+  FlatList,
+  RefreshControl,
+  ActivityIndicator,
+  Image,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
+import { 
+  useGetDailyLeaderboardQuery,
+  useGetWeeklyLeaderboardQuery,
+  useGetMonthlyLeaderboardQuery,
+  useGetCategoryLeaderboardQuery,
+} from '../../api/beviApi';
+
+// Categorie per il filtro temporale
+const TIME_FILTERS = [
+  { id: 'daily', label: 'Oggi', icon: 'today-outline' },
+  { id: 'weekly', label: 'Settimana', icon: 'calendar-outline' },
+  { id: 'monthly', label: 'Mese', icon: 'calendar' },
+];
+
+// Categorie bevande (mappate alle categorie del backend)
+const DRINK_CATEGORIES = [
+  { id: 'all', label: 'Tutti', emoji: '🍹', backendCategory: null },
+  { id: 'alcohol', label: 'Alcol', emoji: '🍺', backendCategory: 'ALCOHOL' },
+  { id: 'energy', label: 'Energy', emoji: '⚡', backendCategory: 'ENERGY_DRINK' },
+  { id: 'soft', label: 'Bibite', emoji: '🥤', backendCategory: 'SOFT_DRINK' },
+  { id: 'water', label: 'Acqua', emoji: '💧', backendCategory: 'WATER' },
+];
+
+// Componente per la singola categoria
+const CategoryTab = ({ category, isActive, onPress }) => (
+  <TouchableOpacity 
+    style={[styles.categoryTab, isActive && styles.categoryTabActive]}
+    onPress={onPress}
+    activeOpacity={0.7}
+  >
+    <Text style={styles.categoryEmoji}>{category.emoji}</Text>
+    <Text style={[styles.categoryLabel, isActive && styles.categoryLabelActive]}>
+      {category.label}
+    </Text>
+  </TouchableOpacity>
+);
+
+// Componente per il filtro temporale
+const TimeFilter = ({ filter, isActive, onPress }) => (
+  <TouchableOpacity 
+    style={[styles.timeFilter, isActive && styles.timeFilterActive]}
+    onPress={onPress}
+    activeOpacity={0.7}
+  >
+    <Ionicons 
+      name={filter.icon} 
+      size={16} 
+      color={isActive ? colors.white : colors.gray} 
+    />
+    <Text style={[styles.timeFilterLabel, isActive && styles.timeFilterLabelActive]}>
+      {filter.label}
+    </Text>
+  </TouchableOpacity>
+);
+
+// Componente per il singolo utente in classifica
+const LeaderboardItem = ({ item, index, showSeparator }) => {
+  const isTopThree = (item.rank || index + 1) <= 3;
+  const medals = ['🥇', '🥈', '🥉'];
+  
+  // Estrai i dati - user è un oggetto dentro item
+  const user = item.user || {};
+  const score = item.score || 0;
+  const rank = item.rank || index + 1;
+  
+  return (
+    <>
+      {showSeparator && (
+        <View style={styles.separatorContainer}>
+          <View style={styles.separatorLine} />
+          <Text style={styles.separatorText}>• • •</Text>
+          <View style={styles.separatorLine} />
+        </View>
+      )}
+      <View style={[
+        styles.leaderboardItem, 
+        isTopThree && styles.leaderboardItemTop,
+        item.isMe && styles.leaderboardItemMe
+      ]}>
+        {/* Posizione */}
+        <View style={styles.positionContainer}>
+          {isTopThree ? (
+            <Text style={styles.medal}>{medals[rank - 1]}</Text>
+          ) : (
+            <Text style={styles.position}>{rank}</Text>
+          )}
+        </View>
+        
+        {/* Avatar */}
+        <View style={[styles.avatar, isTopThree && styles.avatarTop]}>
+          {user.profilePhoto ? (
+            <Image source={{ uri: user.profilePhoto }} style={styles.avatarImage} />
+          ) : (
+            <Ionicons name="person" size={24} color={colors.gray} />
+          )}
+        </View>
+        
+        {/* Info utente */}
+        <View style={styles.userInfo}>
+          <View style={styles.usernameRow}>
+            <Text style={styles.username}>{user.nickname || user.username || 'Utente'}</Text>
+            {item.isMe && <Text style={styles.youBadge}>Tu</Text>}
+          </View>
+          <Text style={styles.drinks}>@{user.username} • Liv. {user.level || 1}</Text>
+        </View>
+        
+        {/* Punteggio */}
+        <View style={styles.scoreContainer}>
+          <Text style={[styles.score, isTopThree && styles.scoreTop]}>
+            {score}
+          </Text>
+          <Text style={styles.scoreLabel}>punti</Text>
+        </View>
+      </View>
+    </>
+  );
+};
+
+// Componente principale
+const GeneralScreen = () => {
+  const [activeCategory, setActiveCategory] = useState('all');
+  const [activeTimeFilter, setActiveTimeFilter] = useState('daily');
+
+  // Trova la categoria backend corrispondente
+  const selectedCategory = DRINK_CATEGORIES.find(c => c.id === activeCategory);
+  const backendCategory = selectedCategory?.backendCategory;
+
+  // Query per le classifiche globali (quando "Tutti" è selezionato)
+  const { 
+    data: dailyData, 
+    isLoading: dailyLoading, 
+    refetch: refetchDaily 
+  } = useGetDailyLeaderboardQuery(undefined, {
+    skip: activeCategory !== 'all' || activeTimeFilter !== 'daily'
+  });
+  
+  const { 
+    data: weeklyData, 
+    isLoading: weeklyLoading, 
+    refetch: refetchWeekly 
+  } = useGetWeeklyLeaderboardQuery(undefined, {
+    skip: activeCategory !== 'all' || activeTimeFilter !== 'weekly'
+  });
+  
+  const { 
+    data: monthlyData, 
+    isLoading: monthlyLoading, 
+    refetch: refetchMonthly 
+  } = useGetMonthlyLeaderboardQuery(undefined, {
+    skip: activeCategory !== 'all' || activeTimeFilter !== 'monthly'
+  });
+
+  // Query per classifica per categoria (quando una categoria specifica è selezionata)
+  const {
+    data: categoryData,
+    isLoading: categoryLoading,
+    refetch: refetchCategory
+  } = useGetCategoryLeaderboardQuery(
+    { category: backendCategory, period: activeTimeFilter },
+    { skip: !backendCategory }
+  );
+
+  // Seleziona i dati in base ai filtri attivi
+  const getCurrentData = () => {
+    // Se è selezionata una categoria specifica
+    if (backendCategory) {
+      return {
+        leaderboard: categoryData?.data?.leaderboard || [],
+        myPosition: categoryData?.data?.myPosition
+      };
+    }
+    
+    // Altrimenti usa le classifiche globali
+    let rawData;
+    switch (activeTimeFilter) {
+      case 'daily':
+        rawData = dailyData;
+        break;
+      case 'weekly':
+        rawData = weeklyData;
+        break;
+      case 'monthly':
+        rawData = monthlyData;
+        break;
+      default:
+        rawData = dailyData;
+    }
+    
+    return {
+      leaderboard: rawData?.data?.leaderboard || [],
+      myPosition: rawData?.data?.myPosition
+    };
+  };
+
+  const isLoading = backendCategory 
+    ? categoryLoading 
+    : (dailyLoading || weeklyLoading || monthlyLoading);
+    
+  const { leaderboard, myPosition } = getCurrentData();
+
+  // Prepara i dati da mostrare: primi 7 + la mia posizione se non sono nei primi 7
+  const getDisplayData = () => {
+    const top7 = leaderboard.slice(0, 7);
+    
+    // Controlla se sono già nei primi 7
+    const amInTop7 = top7.some(item => item.isMe);
+    
+    if (amInTop7 || !myPosition) {
+      return { displayList: top7, showMyPosition: false };
+    }
+    
+    // Trova me nella lista completa
+    const myEntry = leaderboard.find(item => item.isMe);
+    
+    if (myEntry) {
+      return { displayList: top7, showMyPosition: true, myEntry };
+    }
+    
+    // Se non sono nella lista, crea un entry dalla myPosition
+    if (myPosition && myPosition.rank > 7) {
+      return { 
+        displayList: top7, 
+        showMyPosition: true, 
+        myEntry: {
+          rank: myPosition.rank,
+          score: myPosition.score,
+          isMe: true,
+          user: null // Verrà mostrato come "Tu"
+        }
+      };
+    }
+    
+    return { displayList: top7, showMyPosition: false };
+  };
+
+  const { displayList, showMyPosition, myEntry } = getDisplayData();
+
+  // Pull to refresh
+  const [refreshing, setRefreshing] = useState(false);
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    if (backendCategory) {
+      await refetchCategory();
+    } else {
+      await Promise.all([refetchDaily(), refetchWeekly(), refetchMonthly()]);
+    }
+    setRefreshing(false);
+  }, [backendCategory, refetchCategory, refetchDaily, refetchWeekly, refetchMonthly]);
+
+  // Prepara i dati per la FlatList
+  const listData = showMyPosition && myEntry 
+    ? [...displayList, { ...myEntry, showSeparator: true }]
+    : displayList;
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+      
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.title}>Classifica</Text>
+        <TouchableOpacity style={styles.notificationButton}>
+          <Ionicons name="notifications-outline" size={24} color={colors.textPrimary} />
+        </TouchableOpacity>
+      </View>
+
+      {/* Categorie bevande (scroll orizzontale) */}
+      <View style={styles.categoriesContainer}>
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoriesScroll}
+        >
+          {DRINK_CATEGORIES.map((category) => (
+            <CategoryTab
+              key={category.id}
+              category={category}
+              isActive={activeCategory === category.id}
+              onPress={() => setActiveCategory(category.id)}
+            />
+          ))}
+        </ScrollView>
+      </View>
+
+      {/* Filtri temporali */}
+      <View style={styles.timeFiltersContainer}>
+        {TIME_FILTERS.map((filter) => (
+          <TimeFilter
+            key={filter.id}
+            filter={filter}
+            isActive={activeTimeFilter === filter.id}
+            onPress={() => setActiveTimeFilter(filter.id)}
+          />
+        ))}
+      </View>
+
+      {/* Classifica */}
+      {isLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>Caricamento classifica...</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={listData}
+          keyExtractor={(item, index) => item.user?.id?.toString() || `pos-${item.rank || index}`}
+          renderItem={({ item, index }) => (
+            <LeaderboardItem 
+              item={item} 
+              index={index} 
+              showSeparator={item.showSeparator}
+            />
+          )}
+          contentContainerStyle={styles.leaderboardList}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[colors.primary]}
+              tintColor={colors.primary}
+            />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyEmoji}>🏆</Text>
+              <Text style={styles.emptyText}>Nessun dato disponibile</Text>
+              <Text style={styles.emptySubtext}>
+                {backendCategory 
+                  ? `Nessuno ha ancora bevuto ${selectedCategory?.label.toLowerCase()} in questo periodo!`
+                  : 'Inizia a registrare bevute per vedere la classifica!'
+                }
+              </Text>
+            </View>
+          }
+        />
+      )}
+    </SafeAreaView>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+  },
+  title: {
+    ...typography.h1,
+  },
+  notificationButton: {
+    padding: spacing.sm,
+  },
+  
+  // Categorie
+  categoriesContainer: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  categoriesScroll: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+  },
+  categoryTab: {
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginHorizontal: spacing.xs,
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.veryLightGray,
+  },
+  categoryTabActive: {
+    backgroundColor: colors.primary,
+  },
+  categoryEmoji: {
+    fontSize: 24,
+    marginBottom: spacing.xs,
+  },
+  categoryLabel: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  categoryLabelActive: {
+    color: colors.white,
+    fontWeight: '600',
+  },
+  
+  // Filtri temporali
+  timeFiltersContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    paddingVertical: spacing.md,
+    gap: spacing.sm,
+  },
+  timeFilter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.round,
+    backgroundColor: colors.veryLightGray,
+  },
+  timeFilterActive: {
+    backgroundColor: colors.primary,
+  },
+  timeFilterLabel: {
+    ...typography.bodySmall,
+    color: colors.gray,
+    marginLeft: spacing.xs,
+  },
+  timeFilterLabelActive: {
+    color: colors.white,
+    fontWeight: '600',
+  },
+  
+  // Loading
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    ...typography.body,
+    color: colors.textSecondary,
+    marginTop: spacing.md,
+  },
+  
+  // Classifica
+  leaderboardList: {
+    padding: spacing.md,
+  },
+  leaderboardItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderRadius: borderRadius.lg,
+    ...shadows.small,
+  },
+  leaderboardItemTop: {
+    backgroundColor: colors.white,
+    borderWidth: 2,
+    borderColor: colors.bevi,
+  },
+  leaderboardItemMe: {
+    backgroundColor: colors.bevi + '15',
+    borderColor: colors.bevi,
+    borderWidth: 2,
+  },
+  positionContainer: {
+    width: 32,
+    alignItems: 'center',
+  },
+  position: {
+    ...typography.body,
+    fontWeight: '700',
+    color: colors.textSecondary,
+  },
+  medal: {
+    fontSize: 24,
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.veryLightGray,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: spacing.md,
+  },
+  avatarTop: {
+    borderWidth: 2,
+    borderColor: colors.bevi,
+  },
+  avatarImage: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+  },
+  userInfo: {
+    flex: 1,
+  },
+  usernameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  username: {
+    ...typography.body,
+    fontWeight: '600',
+  },
+  youBadge: {
+    ...typography.caption,
+    color: colors.white,
+    backgroundColor: colors.bevi,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: borderRadius.sm,
+    marginLeft: spacing.sm,
+    fontWeight: '600',
+    overflow: 'hidden',
+  },
+  drinks: {
+    ...typography.caption,
+    color: colors.textTertiary,
+  },
+  scoreContainer: {
+    alignItems: 'flex-end',
+  },
+  score: {
+    ...typography.number,
+    color: colors.textPrimary,
+  },
+  scoreTop: {
+    color: colors.primary,
+  },
+  scoreLabel: {
+    ...typography.caption,
+    color: colors.textTertiary,
+  },
+
+  // Separatore
+  separatorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: spacing.md,
+  },
+  separatorLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: colors.border,
+  },
+  separatorText: {
+    ...typography.caption,
+    color: colors.textTertiary,
+    marginHorizontal: spacing.md,
+  },
+  
+  // Empty state
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: spacing.xxl,
+  },
+  emptyEmoji: {
+    fontSize: 64,
+    marginBottom: spacing.md,
+  },
+  emptyText: {
+    ...typography.h3,
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+  },
+  emptySubtext: {
+    ...typography.body,
+    color: colors.textTertiary,
+    textAlign: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+});
+
+export default GeneralScreen;
