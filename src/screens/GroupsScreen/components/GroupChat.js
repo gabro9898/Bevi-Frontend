@@ -47,20 +47,18 @@ const GroupChat = ({ groupId, currentUserId }) => {
   // Estrai messaggi
   const messages = messagesData?.data?.messages || messagesData?.data || [];
 
-  // Gestione tastiera - SEMPLIFICATO
+  // Gestione tastiera
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
 
     const onKeyboardShow = (e) => {
-      console.log('TASTIERA APERTA:', e.endCoordinates.height);
       const keyboardHeight = e.endCoordinates.height;
       const bottomInset = insets.bottom || 0;
       const offset = Platform.OS === 'ios' 
         ? keyboardHeight - bottomInset 
         : keyboardHeight;
       
-      console.log('OFFSET CALCOLATO:', offset);
       setKeyboardOffset(offset);
       
       setTimeout(() => {
@@ -69,7 +67,6 @@ const GroupChat = ({ groupId, currentUserId }) => {
     };
 
     const onKeyboardHide = () => {
-      console.log('TASTIERA CHIUSA');
       setKeyboardOffset(0);
     };
 
@@ -148,7 +145,7 @@ const GroupChat = ({ groupId, currentUserId }) => {
   const showMessageOptions = (message) => {
     const isMyMessage = message.sender?.id === currentUserId || message.senderId === currentUserId || message.isMe;
     
-    if (message.isDeleted || message.type === 'SYSTEM' || message.type === 'DRINK_LOG' || message.type === 'LEADERBOARD') {
+    if (message.isDeleted || message.type === 'SYSTEM' || message.type === 'DRINK_LOG' || message.type === 'LEADERBOARD' || message.type === 'WHEEL_RESULT') {
       return;
     }
 
@@ -280,6 +277,21 @@ const GroupChat = ({ groupId, currentUserId }) => {
     );
   };
 
+  // Render messaggio wheel result
+  const renderWheelResultMessage = (item) => {
+    return (
+      <TouchableWithoutFeedback onPress={dismissKeyboard}>
+        <View style={styles.wheelResultContainer}>
+          <View style={styles.wheelResultBubble}>
+            <Text style={styles.wheelResultIcon}>🎡</Text>
+            <Text style={styles.wheelResultText}>{item.content || item.message}</Text>
+            <Text style={styles.wheelResultTime}>{formatTime(item.createdAt)}</Text>
+          </View>
+        </View>
+      </TouchableWithoutFeedback>
+    );
+  };
+
   // Render singolo messaggio
   const renderItem = ({ item }) => {
     if (item.type === 'date') {
@@ -298,6 +310,10 @@ const GroupChat = ({ groupId, currentUserId }) => {
 
     if (item.type === 'DRINK_LOG') {
       return renderDrinkLogMessage(item);
+    }
+
+    if (item.type === 'WHEEL_RESULT') {
+      return renderWheelResultMessage(item);
     }
 
     const isMe = item.sender?.id === currentUserId || item.senderId === currentUserId || item.isMe;
@@ -373,7 +389,7 @@ const GroupChat = ({ groupId, currentUserId }) => {
         }
       />
 
-      {/* Input messaggio - USA TRANSFORM INVECE DI BOTTOM */}
+      {/* Input messaggio */}
       <View style={[
         styles.inputContainer,
         { transform: [{ translateY: -keyboardOffset }] }
@@ -527,6 +543,38 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
 
+  // Wheel Result Message
+  wheelResultContainer: {
+    alignItems: 'center',
+    marginVertical: spacing.sm,
+  },
+  wheelResultBubble: {
+    backgroundColor: colors.primary + '15',
+    borderWidth: 1,
+    borderColor: colors.primary + '30',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.lg,
+    maxWidth: '85%',
+    alignItems: 'center',
+  },
+  wheelResultIcon: {
+    fontSize: 32,
+    marginBottom: spacing.xs,
+  },
+  wheelResultText: {
+    ...typography.body,
+    color: colors.textPrimary,
+    textAlign: 'center',
+    fontSize: 14,
+  },
+  wheelResultTime: {
+    ...typography.caption,
+    color: colors.textTertiary,
+    fontSize: 10,
+    marginTop: spacing.xs,
+  },
+
   // Normal Message
   messageContainer: {
     marginBottom: spacing.xs,
@@ -604,7 +652,7 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
   },
 
-  // Input - POSIZIONE ASSOLUTA IN BASSO
+  // Input
   inputContainer: {
     position: 'absolute',
     left: 0,

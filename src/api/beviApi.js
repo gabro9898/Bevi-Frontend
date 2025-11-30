@@ -277,10 +277,10 @@ export const beviApi = createApi({
     }),
 
     joinGroup: builder.mutation({
-      query: (code) => ({
+      query: (inviteCode) => ({
         url: '/groups/join',
         method: 'POST',
-        body: { code },
+        body: { inviteCode },
       }),
       invalidatesTags: ['Groups'],
     }),

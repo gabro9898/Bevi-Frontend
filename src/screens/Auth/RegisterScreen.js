@@ -50,7 +50,12 @@ const RegisterScreen = ({ navigation }) => {
   }
 
   try {
-    const result = await register({ username, email, password }).unwrap();
+   const result = await register({ 
+  username, 
+  email, 
+  password,
+  nickname: username.trim()  // Usa username come nickname di default
+}).unwrap();
     
     // La struttura è: result.data.accessToken (non token!)
     const data = result.data;

@@ -9,24 +9,22 @@ import {
   SafeAreaView,
   TouchableOpacity,
   ActivityIndicator,
+  Share,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius } from '../../theme';
-import { useGetGroupByIdQuery, useGetGroupMembersQuery } from '../../api/beviApi';
+import { 
+  useGetGroupByIdQuery, 
+  useGetGroupMembersQuery,
+  useGetGroupInviteLinkQuery,
+} from '../../api/beviApi';
 import { useSelector } from 'react-redux';
 
 // Componenti tabs
 import GroupChat from './components/GroupChat';
 import GroupLeaderboard from './components/GroupLeaderboard';
-
-// Placeholder per la Ruota (da implementare)
-const GroupWheel = ({ groupId }) => (
-  <View style={styles.wheelPlaceholder}>
-    <Text style={styles.wheelEmoji}>🎡</Text>
-    <Text style={styles.wheelTitle}>Ruota delle Sfide</Text>
-    <Text style={styles.wheelSubtitle}>Presto disponibile!</Text>
-  </View>
-);
+import GroupWheel from './components/GroupWheel';
 
 const TABS = [
   { id: 'chat', label: 'Chat', icon: 'chatbubbles-outline' },
@@ -62,11 +60,15 @@ const GroupDetailScreen = ({ route, navigation }) => {
   // API hooks
   const { data: groupData, isLoading: groupLoading } = useGetGroupByIdQuery(groupId);
   const { data: membersData, isLoading: membersLoading } = useGetGroupMembersQuery(groupId);
+  const { data: inviteData } = useGetGroupInviteLinkQuery(groupId);
 
   // Estrai dati gruppo e membri
   const group = groupData?.data || groupData;
   const members = membersData?.data?.members || membersData?.data || [];
   const memberCount = members.length;
+
+  // Estrai codice invito
+ const inviteCode = inviteData?.data?.inviteCode || group?.inviteCode;
 
   // Vai alle info del gruppo
   const handleGoToInfo = () => {
@@ -76,13 +78,31 @@ const GroupDetailScreen = ({ route, navigation }) => {
     });
   };
 
+  // Condividi link invito
+  const handleShare = async () => {
+    if (!inviteCode) {
+      Alert.alert('Errore', 'Impossibile ottenere il codice di invito');
+      return;
+    }
+
+    try {
+      const groupDisplayName = group?.name || groupName;
+      await Share.share({
+        message: `🍺 Unisciti al gruppo "${groupDisplayName}" su Bevi!\n\nUsa il codice: ${inviteCode}\n\nOppure scarica l'app e inserisci il codice per unirti!`,
+        title: `Invito a ${groupDisplayName}`,
+      });
+    } catch (error) {
+      console.log('Errore condivisione:', error);
+    }
+  };
+
   // Render contenuto tab
   const renderTabContent = () => {
     switch (activeTab) {
       case 'chat':
         return <GroupChat groupId={groupId} currentUserId={currentUserId} />;
       case 'wheel':
-        return <GroupWheel groupId={groupId} />;
+        return <GroupWheel groupId={groupId} currentUserId={currentUserId} />;
       case 'leaderboard':
         return <GroupLeaderboard groupId={groupId} currentUserId={currentUserId} />;
       default:
@@ -131,8 +151,14 @@ const GroupDetailScreen = ({ route, navigation }) => {
           </View>
         </TouchableOpacity>
 
-        {/* Spacer per bilanciare */}
-        <View style={styles.headerSpacer} />
+        {/* Pulsante condividi */}
+        <TouchableOpacity
+          style={styles.shareButton}
+          onPress={handleShare}
+          activeOpacity={0.7}
+        >
+          <Ionicons name="person-add-outline" size={22} color={colors.primary} />
+        </TouchableOpacity>
       </View>
 
       {/* Tabs */}
@@ -201,8 +227,8 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textSecondary,
   },
-  headerSpacer: {
-    width: 40,
+  shareButton: {
+    padding: spacing.sm,
   },
 
   // Tabs
@@ -237,26 +263,6 @@ const styles = StyleSheet.create({
   // Content
   content: {
     flex: 1,
-  },
-
-  // Wheel Placeholder
-  wheelPlaceholder: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: spacing.xl,
-  },
-  wheelEmoji: {
-    fontSize: 80,
-    marginBottom: spacing.lg,
-  },
-  wheelTitle: {
-    ...typography.h2,
-    marginBottom: spacing.sm,
-  },
-  wheelSubtitle: {
-    ...typography.body,
-    color: colors.textSecondary,
   },
 });
 
