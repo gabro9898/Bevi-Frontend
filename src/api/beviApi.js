@@ -5,7 +5,6 @@ import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // URL base del backend (deve corrispondere a apiClient.js)
-
 const BASE_URL = 'http://192.168.1.5:3000/api';
 const TOKEN_KEY = '@bevi_auth_token';
 
@@ -43,6 +42,7 @@ export const beviApi = createApi({
     'Notifications',
     'Achievements',
     'Wheel',
+    'Analytics',
   ],
 
   refetchOnFocus: true,
@@ -174,9 +174,9 @@ export const beviApi = createApi({
     }),
 
     getCategoryLeaderboard: builder.query({
-  query: ({ category, period = 'daily' }) => `/leaderboard/category/${category}?period=${period}`,
-  providesTags: ['Leaderboard'],
-}),
+      query: ({ category, period = 'daily' }) => `/leaderboard/category/${category}?period=${period}`,
+      providesTags: ['Leaderboard'],
+    }),
 
     getTopDrinkers: builder.query({
       query: () => '/leaderboard/top-drinkers',
@@ -190,10 +190,10 @@ export const beviApi = createApi({
 
     // ==================== DRINKS ====================
 
-   getAllDrinks: builder.query({
-  query: () => '/drinks?limit=200',
-  providesTags: ['Drinks'],
-}),
+    getAllDrinks: builder.query({
+      query: () => '/drinks?limit=200',
+      providesTags: ['Drinks'],
+    }),
 
     searchDrinks: builder.query({
       query: (searchQuery) => `/drinks/search?q=${encodeURIComponent(searchQuery)}`,
@@ -226,7 +226,7 @@ export const beviApi = createApi({
         method: 'POST',
         body: drinkLogData,
       }),
-      invalidatesTags: ['DrinkLogs', 'Leaderboard', 'User'],
+      invalidatesTags: ['DrinkLogs', 'Leaderboard', 'User', 'Analytics'],
     }),
 
     getMyDrinkLogs: builder.query({
@@ -253,7 +253,7 @@ export const beviApi = createApi({
         url: `/drink-logs/${id}`,
         method: 'DELETE',
       }),
-      invalidatesTags: ['DrinkLogs', 'Leaderboard'],
+      invalidatesTags: ['DrinkLogs', 'Leaderboard', 'Analytics'],
     }),
 
     // ==================== GROUPS ====================
@@ -330,28 +330,27 @@ export const beviApi = createApi({
     }),
 
     updateGroupChallengeSettings: builder.mutation({
-  query: ({ groupId, challengeCategory, leaderboardMode, resetScores }) => ({
-    url: `/groups/${groupId}/challenge-settings`,
-    method: 'PUT',
-    body: { challengeCategory, leaderboardMode, resetScores },
-  }),
-  invalidatesTags: (result, error, { groupId }) => [
-    { type: 'Groups', id: groupId },
-    { type: 'GroupLeaderboard', id: groupId },
-  ],
-}),
+      query: ({ groupId, challengeCategory, leaderboardMode, resetScores }) => ({
+        url: `/groups/${groupId}/challenge-settings`,
+        method: 'PUT',
+        body: { challengeCategory, leaderboardMode, resetScores },
+      }),
+      invalidatesTags: (result, error, { groupId }) => [
+        { type: 'Groups', id: groupId },
+        { type: 'GroupLeaderboard', id: groupId },
+      ],
+    }),
 
-// Pubblica classifica mensile
-publishGroupLeaderboard: builder.mutation({
-  query: (groupId) => ({
-    url: `/groups/${groupId}/publish-leaderboard`,
-    method: 'POST',
-  }),
-  invalidatesTags: (result, error, groupId) => [
-    { type: 'Messages', id: groupId },
-    { type: 'GroupLeaderboard', id: groupId },
-  ],
-}),
+    publishGroupLeaderboard: builder.mutation({
+      query: (groupId) => ({
+        url: `/groups/${groupId}/publish-leaderboard`,
+        method: 'POST',
+      }),
+      invalidatesTags: (result, error, groupId) => [
+        { type: 'Messages', id: groupId },
+        { type: 'GroupLeaderboard', id: groupId },
+      ],
+    }),
 
     // ==================== MESSAGES ====================
 
@@ -364,18 +363,18 @@ publishGroupLeaderboard: builder.mutation({
       query: ({ groupId, message }) => ({
         url: `/messages/group/${groupId}`,
         method: 'POST',
-        body:  { content: message },
+        body: { content: message },
       }),
       invalidatesTags: (result, error, { groupId }) => [{ type: 'Messages', id: groupId }],
     }),
 
     deleteGroupMessage: builder.mutation({
-  query: (messageId) => ({
-    url: `/messages/${messageId}`,
-    method: 'DELETE',
-  }),
-  invalidatesTags: ['Messages'],
-}),
+      query: (messageId) => ({
+        url: `/messages/${messageId}`,
+        method: 'DELETE',
+      }),
+      invalidatesTags: ['Messages'],
+    }),
 
     // ==================== CONVERSATIONS ====================
 
@@ -466,6 +465,18 @@ publishGroupLeaderboard: builder.mutation({
       invalidatesTags: ['Wheel'],
     }),
 
+    // ==================== ANALYTICS ====================
+
+    getMyAnalytics: builder.query({
+      query: (period = 30) => `/analytics/my?period=${period}`,
+      providesTags: ['Analytics'],
+    }),
+
+    getAnalyticsComparison: builder.query({
+      query: () => '/analytics/compare',
+      providesTags: ['Analytics'],
+    }),
+
   }),
 });
 
@@ -528,8 +539,8 @@ export const {
   useGetGroupLeaderboardQuery,
   useLeaveGroupMutation,
   useGetGroupInviteLinkQuery,
-  useUpdateGroupChallengeSettingsMutation,  
-usePublishGroupLeaderboardMutation, 
+  useUpdateGroupChallengeSettingsMutation,
+  usePublishGroupLeaderboardMutation,
   
   // Messages
   useGetGroupMessagesQuery,
@@ -557,4 +568,9 @@ usePublishGroupLeaderboardMutation,
   useSpinWheelMutation,
   useGetPendingChallengesQuery,
   useCompleteChallengeMutation,
+
+  // Analytics
+  useGetMyAnalyticsQuery,
+  useGetAnalyticsComparisonQuery,
+  
 } = beviApi;

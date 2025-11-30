@@ -11,8 +11,10 @@ import {
   ScrollView,
   RefreshControl,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
+import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 import { clearCredentials, selectCurrentUser, setUser } from '../../store/slices/authSlice';
@@ -29,18 +31,19 @@ const StatCard = ({ icon, value, label, color }) => (
   </View>
 );
 
-const MenuButton = ({ icon, label, onPress, color = colors.textPrimary }) => (
+const MenuButton = ({ icon, label, onPress, color = colors.textPrimary, rightIcon = "chevron-forward" }) => (
   <TouchableOpacity style={styles.menuButton} onPress={onPress} activeOpacity={0.7}>
     <View style={styles.menuButtonLeft}>
       <Ionicons name={icon} size={22} color={color} />
       <Text style={[styles.menuButtonLabel, { color }]}>{label}</Text>
     </View>
-    <Ionicons name="chevron-forward" size={20} color={colors.gray} />
+    <Ionicons name={rightIcon} size={20} color={colors.gray} />
   </TouchableOpacity>
 );
 
 const ProfileScreen = () => {
   const dispatch = useDispatch();
+  const navigation = useNavigation();
   const currentUser = useSelector(selectCurrentUser);
   
   // Query per il profilo (chiama /auth/me)
@@ -83,6 +86,10 @@ const ProfileScreen = () => {
   const handleLogout = async () => {
     await clearTokens();
     dispatch(clearCredentials());
+  };
+
+  const handleOpenAnalytics = () => {
+    navigation.navigate('Analytics');
   };
 
   const isLoading = meLoading || statsLoading;
@@ -161,9 +168,29 @@ const ProfileScreen = () => {
           />
         </View>
 
+        {/* Pulsante Analytics */}
+        <View style={styles.section}>
+          <TouchableOpacity 
+            style={styles.analyticsButton} 
+            onPress={handleOpenAnalytics}
+            activeOpacity={0.8}
+          >
+            <View style={styles.analyticsButtonLeft}>
+              <View style={styles.analyticsIconContainer}>
+                <Ionicons name="bar-chart" size={24} color={colors.white} />
+              </View>
+              <View style={styles.analyticsTextContainer}>
+                <Text style={styles.analyticsButtonTitle}>Le mie Statistiche</Text>
+                <Text style={styles.analyticsButtonSubtitle}>Grafici e analisi delle tue bevute</Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={24} color={colors.primary} />
+          </TouchableOpacity>
+        </View>
+
         {/* Statistiche dettagliate */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Le tue statistiche</Text>
+          <Text style={styles.sectionTitle}>Riepilogo veloce</Text>
           <View style={styles.detailedStats}>
             <View style={styles.detailedStatRow}>
               <Text style={styles.detailedStatLabel}>Bevute oggi</Text>
@@ -354,6 +381,45 @@ const styles = StyleSheet.create({
   sectionTitle: {
     ...typography.h4,
     marginBottom: spacing.md,
+  },
+
+  // Analytics Button
+  analyticsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.primary + '10',
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.primary + '30',
+  },
+  analyticsButtonLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  analyticsIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.md,
+  },
+  analyticsTextContainer: {
+    flex: 1,
+  },
+  analyticsButtonTitle: {
+    ...typography.body,
+    fontWeight: '600',
+    color: colors.textPrimary,
+  },
+  analyticsButtonSubtitle: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
   
   // Detailed Stats

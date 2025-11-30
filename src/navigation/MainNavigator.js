@@ -10,6 +10,7 @@ import MainTabs from './MainTabs';
 // Schermate di dettaglio
 import GroupDetailScreen from '../screens/GroupsScreen/GroupDetailScreen';
 import GroupInfoScreen from '../screens/GroupsScreen/GroupInfoScreen';
+import AnalyticsScreen from '../screens/AnalyticsScreen/AnalyticsScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -39,6 +40,15 @@ const MainNavigator = () => {
       <Stack.Screen 
         name="GroupInfo" 
         component={GroupInfoScreen}
+        options={{
+          animation: 'slide_from_right',
+        }}
+      />
+
+      {/* Analytics */}
+      <Stack.Screen 
+        name="Analytics" 
+        component={AnalyticsScreen}
         options={{
           animation: 'slide_from_right',
         }}
