@@ -12,9 +12,15 @@ import GroupDetailScreen from '../screens/GroupsScreen/GroupDetailScreen';
 import GroupInfoScreen from '../screens/GroupsScreen/GroupInfoScreen';
 import AnalyticsScreen from '../screens/AnalyticsScreen/AnalyticsScreen';
 
+// Push Notifications
+import { usePushNotifications } from '../hooks/usePushNotifications';
+
 const Stack = createNativeStackNavigator();
 
 const MainNavigator = () => {
+  // Inizializza le notifiche push (registra token e listener)
+  usePushNotifications();
+
   return (
     <Stack.Navigator
       screenOptions={{

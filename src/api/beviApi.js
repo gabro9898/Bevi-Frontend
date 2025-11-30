@@ -477,6 +477,30 @@ export const beviApi = createApi({
       providesTags: ['Analytics'],
     }),
 
+    // ==================== PUSH NOTIFICATIONS ====================
+
+    registerPushToken: builder.mutation({
+      query: (expoPushToken) => ({
+        url: '/push/register',
+        method: 'POST',
+        body: { expoPushToken },
+      }),
+    }),
+
+    unregisterPushToken: builder.mutation({
+      query: () => ({
+        url: '/push/unregister',
+        method: 'DELETE',
+      }),
+    }),
+
+    sendTestNotification: builder.mutation({
+      query: () => ({
+        url: '/push/test',
+        method: 'POST',
+      }),
+    }),
+
   }),
 });
 
@@ -572,5 +596,10 @@ export const {
   // Analytics
   useGetMyAnalyticsQuery,
   useGetAnalyticsComparisonQuery,
+
+  // Push
+  useRegisterPushTokenMutation,
+  useUnregisterPushTokenMutation,
+  useSendTestNotificationMutation,
   
 } = beviApi;
