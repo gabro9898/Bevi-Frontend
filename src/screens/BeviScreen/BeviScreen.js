@@ -1,7 +1,7 @@
 // src/screens/BeviScreen/BeviScreen.js
 // Schermata per registrare una bevuta con foto
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
   View, 
   Text, 
@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 import { 
   useCreateDrinkLogMutation, 
@@ -213,7 +214,9 @@ const BeviScreen = () => {
   const [photo, setPhoto] = useState(null);
   const [drinkSelectorVisible, setDrinkSelectorVisible] = useState(false);
   const [facing, setFacing] = useState('back');
+  const [localCooldown, setLocalCooldown] = useState(0);
   const cameraRef = useRef(null);
+  const timerRef = useRef(null);
 
   // API hooks
   const [createDrinkLog, { isLoading: isSubmitting }] = useCreateDrinkLogMutation();
@@ -228,14 +231,11 @@ const BeviScreen = () => {
   const extractTopDrinks = () => {
     const topDrinksData = statsResponse?.data?.topDrinks || [];
     
-    // topDrinks contiene { drink: {...}, count: X }
-    // Dobbiamo trovare i dettagli completi dalla lista drinks
     const result = [];
     
     for (const item of topDrinksData) {
       if (!item.drink) continue;
       
-      // Cerca la bevanda completa nella lista drinks usando il nome/brand
       const fullDrink = drinks.find(d => 
         d.name === item.drink.name && d.brand === item.drink.brand
       );
@@ -244,7 +244,7 @@ const BeviScreen = () => {
         result.push(fullDrink);
       }
       
-      if (result.length >= 6) break; // Max 6 preferiti
+      if (result.length >= 6) break;
     }
     
     return result;
@@ -252,10 +252,59 @@ const BeviScreen = () => {
 
   const topDrinks = extractTopDrinks();
 
-  // Estrai cooldown dalla risposta
+  // Estrai cooldown dalla risposta API
   const cooldownData = cooldownResponse?.data || cooldownResponse || {};
-  const canDrink = cooldownData?.canDrink !== false;
-  const cooldownRemaining = cooldownData?.waitTime || 0;
+  const serverCanDrink = cooldownData?.canDrink !== false;
+  const serverWaitTime = cooldownData?.waitTime || 0;
+
+  // Stato locale per il countdown
+  const canDrink = serverCanDrink && localCooldown <= 0;
+
+  // Aggiorna il cooldown locale quando arriva la risposta dal server
+  useEffect(() => {
+    if (serverWaitTime > 0) {
+      setLocalCooldown(serverWaitTime);
+    } else if (serverCanDrink) {
+      setLocalCooldown(0);
+    }
+  }, [serverWaitTime, serverCanDrink]);
+
+  // Timer che decrementa ogni secondo
+  useEffect(() => {
+    // Pulisci timer precedente
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+    }
+
+    // Se c'è cooldown attivo, avvia il countdown
+    if (localCooldown > 0) {
+      timerRef.current = setInterval(() => {
+        setLocalCooldown(prev => {
+          if (prev <= 1) {
+            // Tempo scaduto! Refetch dal server per confermare
+            clearInterval(timerRef.current);
+            refetchCooldown();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+
+    // Cleanup al unmount
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, [localCooldown > 0]); // Dipende solo da se c'è cooldown attivo
+
+  // Refetch quando la schermata torna in focus
+  useFocusEffect(
+    useCallback(() => {
+      refetchCooldown();
+    }, [refetchCooldown])
+  );
 
   // Formatta il tempo rimanente
   const formatCooldown = (seconds) => {
@@ -462,7 +511,7 @@ const BeviScreen = () => {
               <Text style={styles.infoText}>
                 {canDrink 
                   ? 'Puoi registrare una bevuta!' 
-                  : `Prossima bevuta tra ${formatCooldown(cooldownRemaining)}`
+                  : `Prossima bevuta tra ${formatCooldown(localCooldown)}`
                 }
               </Text>
             </View>

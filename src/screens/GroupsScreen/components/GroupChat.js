@@ -24,6 +24,7 @@ import {
   useGetGroupMessagesQuery, 
   useSendGroupMessageMutation,
   useDeleteGroupMessageMutation,
+  useMarkMessagesAsReadMutation,
 } from '../../../api/beviApi';
 
 const GroupChat = ({ groupId, currentUserId }) => {
@@ -31,6 +32,7 @@ const GroupChat = ({ groupId, currentUserId }) => {
   const [keyboardOffset, setKeyboardOffset] = useState(0);
   const flatListRef = useRef(null);
   const insets = useSafeAreaInsets();
+  const hasMarkedAsRead = useRef(false);
 
   // API hooks
   const { 
@@ -43,9 +45,25 @@ const GroupChat = ({ groupId, currentUserId }) => {
 
   const [sendMessage, { isLoading: isSending }] = useSendGroupMessageMutation();
   const [deleteMessage, { isLoading: isDeleting }] = useDeleteGroupMessageMutation();
+  const [markAsRead] = useMarkMessagesAsReadMutation();
 
   // Estrai messaggi
   const messages = messagesData?.data?.messages || messagesData?.data || [];
+
+  // Segna messaggi come letti quando si apre la chat
+  useEffect(() => {
+    if (messages.length > 0 && !hasMarkedAsRead.current) {
+      hasMarkedAsRead.current = true;
+      markAsRead(groupId).catch(err => {
+        console.log('Errore mark as read:', err);
+      });
+    }
+  }, [groupId, messages.length, markAsRead]);
+
+  // Reset del flag quando cambia gruppo
+  useEffect(() => {
+    hasMarkedAsRead.current = false;
+  }, [groupId]);
 
   // Gestione tastiera
   useEffect(() => {

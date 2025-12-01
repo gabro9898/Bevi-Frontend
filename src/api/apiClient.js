@@ -11,7 +11,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 // Per trovare il tuo IP: apri cmd e scrivi "ipconfig"
 // Cerca "Indirizzo IPv4" (es. 192.168.1.100)
 
-const BASE_URL = 'http://192.168.1.5:3000/api';
+const BASE_URL = 'https://bevi-backend.onrender.com/api';
 // Chiave per salvare il token in AsyncStorage
 const TOKEN_KEY = '@bevi_auth_token';
 const REFRESH_TOKEN_KEY = '@bevi_refresh_token';

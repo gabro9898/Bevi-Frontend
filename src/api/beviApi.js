@@ -5,7 +5,7 @@ import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // URL base del backend (deve corrispondere a apiClient.js)
-const BASE_URL = 'http://192.168.1.5:3000/api';
+const BASE_URL = 'https://bevi-backend.onrender.com/api';
 const TOKEN_KEY = '@bevi_auth_token';
 
 // ==================== CONFIGURAZIONE BASE ====================
@@ -43,6 +43,7 @@ export const beviApi = createApi({
     'Achievements',
     'Wheel',
     'Analytics',
+    'Cooldown',
   ],
 
   refetchOnFocus: true,
@@ -226,7 +227,7 @@ export const beviApi = createApi({
         method: 'POST',
         body: drinkLogData,
       }),
-      invalidatesTags: ['DrinkLogs', 'Leaderboard', 'User', 'Analytics'],
+      invalidatesTags: ['DrinkLogs', 'Leaderboard', 'User', 'Analytics', 'Cooldown'],
     }),
 
     getMyDrinkLogs: builder.query({
@@ -246,6 +247,7 @@ export const beviApi = createApi({
 
     getCooldownStatus: builder.query({
       query: () => '/drink-logs/cooldown',
+      providesTags: ['Cooldown'],
     }),
 
     deleteDrinkLog: builder.mutation({
@@ -253,7 +255,7 @@ export const beviApi = createApi({
         url: `/drink-logs/${id}`,
         method: 'DELETE',
       }),
-      invalidatesTags: ['DrinkLogs', 'Leaderboard', 'Analytics'],
+      invalidatesTags: ['DrinkLogs', 'Leaderboard', 'Analytics', 'Cooldown'],
     }),
 
     // ==================== GROUPS ====================
@@ -374,6 +376,14 @@ export const beviApi = createApi({
         method: 'DELETE',
       }),
       invalidatesTags: ['Messages'],
+    }),
+
+    markMessagesAsRead: builder.mutation({
+      query: (groupId) => ({
+        url: `/messages/group/${groupId}/read`,
+        method: 'PUT',
+      }),
+      invalidatesTags: ['Groups'],
     }),
 
     // ==================== CONVERSATIONS ====================
@@ -570,6 +580,7 @@ export const {
   useGetGroupMessagesQuery,
   useSendGroupMessageMutation,
   useDeleteGroupMessageMutation,
+  useMarkMessagesAsReadMutation,
 
   // Conversations
   useGetMyConversationsQuery,
@@ -603,3 +614,7 @@ export const {
   useSendTestNotificationMutation,
   
 } = beviApi;
+
+// ==================== RESET CACHE FUNCTION ====================
+// Chiama questa funzione al logout per pulire tutta la cache
+export const resetApiCache = () => beviApi.util.resetApiState();
