@@ -1,5 +1,6 @@
 // src/api/beviApi.js
 // RTK Query API - Tutti gli endpoints del backend Bevi
+// ✅ VERSIONE CORRETTA - Fix race condition WebSocket
 
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -46,8 +47,10 @@ export const beviApi = createApi({
     'Cooldown',
   ],
 
-  refetchOnFocus: true,
-  refetchOnReconnect: true,
+  // ✅ FIX: Disabilita refetch automatico globale per i messaggi
+  // I messaggi arrivano via WebSocket, non serve polling
+  refetchOnFocus: false,
+  refetchOnReconnect: false,
 
   endpoints: (builder) => ({
     
@@ -359,6 +362,9 @@ export const beviApi = createApi({
     getGroupMessages: builder.query({
       query: (groupId) => `/messages/group/${groupId}`,
       providesTags: (result, error, groupId) => [{ type: 'Messages', id: groupId }],
+      // ✅ FIX: Disabilita refetch automatico per i messaggi
+      // I nuovi messaggi arrivano via WebSocket!
+      keepUnusedDataFor: 300, // Mantieni in cache per 5 minuti
     }),
 
     sendGroupMessage: builder.mutation({
@@ -367,7 +373,10 @@ export const beviApi = createApi({
         method: 'POST',
         body: { content: message },
       }),
-      invalidatesTags: (result, error, { groupId }) => [{ type: 'Messages', id: groupId }],
+      // ✅ FIX CRITICO: RIMOSSO invalidatesTags!
+      // Prima c'era: invalidatesTags: (result, error, { groupId }) => [{ type: 'Messages', id: groupId }],
+      // Questo causava un refetch che sovrascriveva i messaggi WebSocket!
+      // I messaggi arrivano via WebSocket, non serve invalidare la cache.
     }),
 
     deleteGroupMessage: builder.mutation({
@@ -375,7 +384,8 @@ export const beviApi = createApi({
         url: `/messages/${messageId}`,
         method: 'DELETE',
       }),
-      invalidatesTags: ['Messages'],
+      // ✅ FIX: Anche qui rimuoviamo invalidatesTags
+      // L'eliminazione viene notificata via WebSocket
     }),
 
     markMessagesAsRead: builder.mutation({

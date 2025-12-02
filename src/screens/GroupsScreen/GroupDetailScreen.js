@@ -1,7 +1,7 @@
 // src/screens/GroupsScreen/GroupDetailScreen.js
 // Schermata dettaglio gruppo con tabs: Chat, Ruota, Classifica
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -18,6 +18,7 @@ import {
   useGetGroupByIdQuery, 
   useGetGroupMembersQuery,
   useGetGroupInviteLinkQuery,
+  useGetMeQuery,
 } from '../../api/beviApi';
 import { useSelector } from 'react-redux';
 
@@ -53,9 +54,32 @@ const GroupDetailScreen = ({ route, navigation }) => {
   const { groupId, groupName } = route.params;
   const [activeTab, setActiveTab] = useState('chat');
 
-  // Ottieni l'utente corrente
-  const currentUser = useSelector((state) => state.auth.user);
+  // ==================== FIX: Ottieni utente corrente ====================
+  // Metodo 1: Da Redux store
+  const authState = useSelector((state) => state.auth);
+  const currentUserFromRedux = authState?.user;
+  
+  // Metodo 2: Da API (fallback se Redux è vuoto)
+  const { data: meData } = useGetMeQuery(undefined, {
+    skip: !!currentUserFromRedux?.id, // Salta se già abbiamo l'utente
+  });
+  
+  // Estrai utente da API response
+  const currentUserFromApi = meData?.data?.user || meData?.data || meData?.user || meData;
+  
+  // Usa quello disponibile
+  const currentUser = currentUserFromRedux?.id ? currentUserFromRedux : currentUserFromApi;
   const currentUserId = currentUser?.id;
+
+  // ==================== DEBUG LOGS ====================
+  useEffect(() => {
+    console.log('🔴🔴🔴 AUTH DEBUG 🔴🔴🔴');
+    console.log('authState:', JSON.stringify(authState, null, 2));
+    console.log('currentUserFromRedux:', currentUserFromRedux);
+    console.log('currentUserFromApi:', currentUserFromApi);
+    console.log('FINAL currentUserId:', currentUserId);
+    console.log('🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴');
+  }, [authState, currentUserFromRedux, currentUserFromApi, currentUserId]);
 
   // API hooks
   const { data: groupData, isLoading: groupLoading } = useGetGroupByIdQuery(groupId);
@@ -68,7 +92,7 @@ const GroupDetailScreen = ({ route, navigation }) => {
   const memberCount = members.length;
 
   // Estrai codice invito
- const inviteCode = inviteData?.data?.inviteCode || group?.inviteCode;
+  const inviteCode = inviteData?.data?.inviteCode || group?.inviteCode;
 
   // Vai alle info del gruppo
   const handleGoToInfo = () => {

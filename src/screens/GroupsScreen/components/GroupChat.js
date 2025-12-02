@@ -1,7 +1,7 @@
 // src/screens/GroupsScreen/components/GroupChat.js
-// Componente chat del gruppo
+// ✅ VERSIONE CORRETTA - Fix race condition RTK Query vs WebSocket
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,63 +9,265 @@ import {
   FlatList,
   TextInput,
   TouchableOpacity,
-  TouchableWithoutFeedback,
   Platform,
   ActivityIndicator,
   Alert,
   ActionSheetIOS,
-  Image,
   Keyboard,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius } from '../../../theme';
-import { 
-  useGetGroupMessagesQuery, 
+import {
+  useGetGroupMessagesQuery,
   useSendGroupMessageMutation,
   useDeleteGroupMessageMutation,
   useMarkMessagesAsReadMutation,
 } from '../../../api/beviApi';
+import { useGroupChat } from '../../../hooks/useSocket';
 
 const GroupChat = ({ groupId, currentUserId }) => {
+  // ============ STATE ============
   const [messageText, setMessageText] = useState('');
   const [keyboardOffset, setKeyboardOffset] = useState(0);
+  const [localMessages, setLocalMessages] = useState([]);
+  const [typingUsers, setTypingUsers] = useState([]);
+  const [initialLoadDone, setInitialLoadDone] = useState(false);
+  
+  // ============ REFS ============
   const flatListRef = useRef(null);
   const insets = useSafeAreaInsets();
   const hasMarkedAsRead = useRef(false);
+  const typingTimeoutRef = useRef(null);
+  const previousGroupId = useRef(null);
 
-  // API hooks
-  const { 
-    data: messagesData, 
-    isLoading, 
-    refetch 
+  // ============ DEBUG ============
+  console.log('🔷 GroupChat RENDER | groupId:', groupId, '| messages:', localMessages.length);
+
+  // ==================== NORMALIZZAZIONE ID ====================
+  const normalizeId = useCallback((id) => {
+    if (id === null || id === undefined) return '';
+    return String(id);
+  }, []);
+
+  const myUserId = normalizeId(currentUserId);
+
+  // ==================== API QUERY ====================
+  const {
+    data: messagesData,
+    isLoading,
+    isFetching,
+    isSuccess,
+    isError,
+    error,
   } = useGetGroupMessagesQuery(groupId, {
-    pollingInterval: 5000,
+    skip: !groupId,
+    // ✅ FIX: Disabilita TUTTI i refetch automatici
+    // I nuovi messaggi arrivano SOLO via WebSocket!
+    refetchOnMountOrArgChange: false,
+    refetchOnFocus: false,
+    refetchOnReconnect: false,
   });
 
   const [sendMessage, { isLoading: isSending }] = useSendGroupMessageMutation();
-  const [deleteMessage, { isLoading: isDeleting }] = useDeleteGroupMessageMutation();
+  const [deleteMessage] = useDeleteGroupMessageMutation();
   const [markAsRead] = useMarkMessagesAsReadMutation();
 
-  // Estrai messaggi
-  const messages = messagesData?.data?.messages || messagesData?.data || [];
+  // ==================== PROCESSA MESSAGGI ====================
+  const processMessages = useCallback((messages) => {
+    if (!messages || !Array.isArray(messages)) return [];
 
-  // Segna messaggi come letti quando si apre la chat
+    return messages.map(msg => {
+      const senderId = normalizeId(msg.sender?.id || msg.senderId);
+      const isMe = senderId === myUserId;
+      return { ...msg, isMe };
+    });
+  }, [myUserId, normalizeId]);
+
+  // ==================== WEBSOCKET CALLBACKS ====================
+
+  /**
+   * Handler per nuovo messaggio via WebSocket
+   * ✅ FIX: Aggiunge al localMessages senza aspettare API
+   */
+  const handleNewMessage = useCallback((message) => {
+    console.log('📩 WS: nuovo messaggio', message.id);
+
+    setLocalMessages(prev => {
+      const messageId = normalizeId(message.id);
+      
+      // Controlla duplicati
+      const exists = prev.some(m => normalizeId(m.id) === messageId);
+      if (exists) {
+        console.log('   - Duplicato, ignoro');
+        return prev;
+      }
+
+      // Calcola isMe
+      const senderId = normalizeId(message.sender?.id || message.senderId);
+      const isMe = senderId === myUserId;
+
+      console.log('   - Aggiunto, isMe:', isMe);
+      
+      // Aggiungi e ordina per data
+      const updated = [...prev, { ...message, isMe }];
+      updated.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+      
+      return updated;
+    });
+
+    // Scrolla in fondo
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }, 100);
+  }, [myUserId, normalizeId]);
+
+  /**
+   * Handler per messaggio eliminato via WebSocket
+   */
+  const handleMessageDeleted = useCallback((data) => {
+    const messageId = normalizeId(typeof data === 'string' ? data : data.messageId);
+    console.log('🗑️ WS: messaggio eliminato:', messageId);
+
+    setLocalMessages(prev =>
+      prev.map(m =>
+        normalizeId(m.id) === messageId
+          ? { ...m, isDeleted: true, content: 'Messaggio eliminato' }
+          : m
+      )
+    );
+  }, [normalizeId]);
+
+  /**
+   * Handler per utente che scrive
+   */
+  const handleUserTyping = useCallback((data) => {
+    const typingUserId = normalizeId(data.userId);
+    if (typingUserId === myUserId) return;
+
+    setTypingUsers(prev => {
+      if (data.isTyping) {
+        const exists = prev.some(u => normalizeId(u.userId) === typingUserId);
+        if (!exists) {
+          return [...prev, { userId: data.userId, username: data.username }];
+        }
+        return prev;
+      } else {
+        return prev.filter(u => normalizeId(u.userId) !== typingUserId);
+      }
+    });
+
+    // Auto-rimuovi dopo 3 secondi
+    setTimeout(() => {
+      setTypingUsers(prev => prev.filter(u => normalizeId(u.userId) !== typingUserId));
+    }, 3000);
+  }, [myUserId, normalizeId]);
+
+  // ==================== WEBSOCKET HOOK ====================
+  const { sendTyping, isConnected, isJoined, reconnect, getStatus } = useGroupChat(
+    groupId,
+    handleNewMessage,
+    handleMessageDeleted,
+    handleUserTyping
+  );
+
+  // ==================== EFFETTI ====================
+
+  /**
+   * Reset quando cambia gruppo
+   */
   useEffect(() => {
-    if (messages.length > 0 && !hasMarkedAsRead.current) {
-      hasMarkedAsRead.current = true;
-      markAsRead(groupId).catch(err => {
-        console.log('Errore mark as read:', err);
-      });
+    if (previousGroupId.current !== groupId) {
+      console.log('🔄 Cambio gruppo:', previousGroupId.current, '->', groupId);
+      setLocalMessages([]);
+      setTypingUsers([]);
+      setInitialLoadDone(false);
+      hasMarkedAsRead.current = false;
+      previousGroupId.current = groupId;
     }
-  }, [groupId, messages.length, markAsRead]);
-
-  // Reset del flag quando cambia gruppo
-  useEffect(() => {
-    hasMarkedAsRead.current = false;
   }, [groupId]);
 
-  // Gestione tastiera
+  /**
+   * ⭐ CARICAMENTO INIZIALE dal server
+   * ✅ FIX CRITICO: Carica SOLO UNA VOLTA, poi i messaggi arrivano via WebSocket
+   */
+  useEffect(() => {
+    // Skip se già caricato
+    if (initialLoadDone) {
+      console.log('⏭️ Skip: caricamento iniziale già fatto');
+      return;
+    }
+
+    // Skip se sta caricando
+    if (isLoading) {
+      console.log('⏳ Skip: ancora in loading');
+      return;
+    }
+
+    // Skip se sta facendo refetch (NON sovrascrivere!)
+    if (isFetching && localMessages.length > 0) {
+      console.log('⏭️ Skip: isFetching ma ho già messaggi locali');
+      return;
+    }
+
+    // Skip se non ci sono dati
+    if (!messagesData) {
+      console.log('⏭️ Skip: messagesData è null');
+      return;
+    }
+
+    console.log('⭐ Caricamento iniziale messaggi...');
+
+    // Estrai messaggi dalla risposta (supporta vari formati)
+    let serverMessages = null;
+    if (messagesData?.data?.messages && Array.isArray(messagesData.data.messages)) {
+      serverMessages = messagesData.data.messages;
+    } else if (messagesData?.data && Array.isArray(messagesData.data)) {
+      serverMessages = messagesData.data;
+    } else if (messagesData?.messages && Array.isArray(messagesData.messages)) {
+      serverMessages = messagesData.messages;
+    } else if (Array.isArray(messagesData)) {
+      serverMessages = messagesData;
+    }
+
+    if (!serverMessages) {
+      console.log('❌ Formato messagesData non riconosciuto');
+      return;
+    }
+
+    console.log('   📬 Messaggi dal server:', serverMessages.length);
+
+    // Processa i messaggi
+    const processed = processMessages(serverMessages);
+    
+    // Imposta i messaggi locali
+    setLocalMessages(processed);
+    setInitialLoadDone(true);
+
+    console.log('   ✅ Caricamento iniziale completato:', processed.length, 'messaggi');
+
+    // Scrolla in fondo
+    if (processed.length > 0) {
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: false });
+      }, 200);
+    }
+  }, [messagesData, isLoading, isFetching, initialLoadDone, processMessages, localMessages.length]);
+
+  /**
+   * Segna messaggi come letti
+   */
+  useEffect(() => {
+    if (localMessages.length > 0 && !hasMarkedAsRead.current && groupId) {
+      hasMarkedAsRead.current = true;
+      console.log('📖 Segno messaggi come letti');
+      markAsRead(groupId).catch(err => console.log('Errore mark as read:', err));
+    }
+  }, [groupId, localMessages.length, markAsRead]);
+
+  /**
+   * Gestione tastiera
+   */
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
@@ -73,140 +275,111 @@ const GroupChat = ({ groupId, currentUserId }) => {
     const onKeyboardShow = (e) => {
       const keyboardHeight = e.endCoordinates.height;
       const bottomInset = insets.bottom || 0;
-      const offset = Platform.OS === 'ios' 
-        ? keyboardHeight - bottomInset 
-        : keyboardHeight;
-      
+      const offset = Platform.OS === 'ios' ? keyboardHeight - bottomInset : keyboardHeight;
       setKeyboardOffset(offset);
-      
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     };
 
-    const onKeyboardHide = () => {
-      setKeyboardOffset(0);
-    };
+    const onKeyboardHide = () => setKeyboardOffset(0);
 
-    const showSubscription = Keyboard.addListener(showEvent, onKeyboardShow);
-    const hideSubscription = Keyboard.addListener(hideEvent, onKeyboardHide);
+    const showSub = Keyboard.addListener(showEvent, onKeyboardShow);
+    const hideSub = Keyboard.addListener(hideEvent, onKeyboardHide);
 
     return () => {
-      showSubscription.remove();
-      hideSubscription.remove();
+      showSub.remove();
+      hideSub.remove();
     };
   }, [insets.bottom]);
 
-  // Scrolla in fondo quando arrivano nuovi messaggi
+  /**
+   * Cleanup typing timeout
+   */
   useEffect(() => {
-    if (messages.length > 0 && flatListRef.current) {
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
-    }
-  }, [messages.length]);
+    return () => {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    };
+  }, []);
 
-  // Chiudi tastiera
-  const dismissKeyboard = () => {
-    Keyboard.dismiss();
+  // ==================== HANDLERS ====================
+
+  const dismissKeyboard = () => Keyboard.dismiss();
+
+  const handleTextChange = (text) => {
+    setMessageText(text);
+    if (text.length > 0) {
+      sendTyping(true);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => sendTyping(false), 2000);
+    } else {
+      sendTyping(false);
+    }
   };
 
-  // Invia messaggio
   const handleSend = async () => {
     if (!messageText.trim() || isSending) return;
 
     const text = messageText.trim();
     setMessageText('');
+    sendTyping(false);
+    if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
 
     try {
+      console.log('📤 Invio messaggio:', text);
       await sendMessage({ groupId, message: text }).unwrap();
-      refetch();
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+      // ✅ NON scrollare qui - il messaggio arriva via WebSocket e lo scroll è lì
     } catch (error) {
-      console.log('Errore invio messaggio:', error);
-      setMessageText(text);
+      console.log('❌ Errore invio:', error);
+      setMessageText(text); // Ripristina il testo
+      Alert.alert('Errore', 'Impossibile inviare il messaggio');
     }
   };
 
-  // Elimina messaggio
   const handleDelete = async (messageId) => {
-    Alert.alert(
-      'Elimina messaggio',
-      'Sei sicuro di voler eliminare questo messaggio?',
-      [
-        { text: 'Annulla', style: 'cancel' },
-        {
-          text: 'Elimina',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteMessage(messageId).unwrap();
-              refetch();
-            } catch (error) {
-              console.log('Errore eliminazione:', error);
-              Alert.alert('Errore', error?.data?.message || 'Impossibile eliminare il messaggio');
-            }
-          },
+    Alert.alert('Elimina messaggio', 'Sei sicuro?', [
+      { text: 'Annulla', style: 'cancel' },
+      {
+        text: 'Elimina',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteMessage(messageId).unwrap();
+            // ✅ L'aggiornamento arriva via WebSocket
+          } catch (error) {
+            Alert.alert('Errore', 'Impossibile eliminare');
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
-  // Copia messaggio
-  const handleCopy = (text) => {
-    Alert.alert('Copiato', 'Messaggio copiato negli appunti');
-  };
-
-  // Mostra opzioni messaggio (long press)
   const showMessageOptions = (message) => {
-    const isMyMessage = message.sender?.id === currentUserId || message.senderId === currentUserId || message.isMe;
-    
-    if (message.isDeleted || message.type === 'SYSTEM' || message.type === 'DRINK_LOG' || message.type === 'LEADERBOARD' || message.type === 'WHEEL_RESULT') {
-      return;
-    }
+    const isMine = message.isMe === true;
+    if (message.isDeleted || ['SYSTEM', 'DRINK_LOG', 'LEADERBOARD', 'WHEEL_RESULT'].includes(message.type)) return;
 
     if (Platform.OS === 'ios') {
-      const options = isMyMessage 
-        ? ['Annulla', 'Copia', 'Elimina']
-        : ['Annulla', 'Copia'];
-      
-      const destructiveIndex = isMyMessage ? 2 : undefined;
-
       ActionSheetIOS.showActionSheetWithOptions(
         {
-          options,
-          destructiveButtonIndex: destructiveIndex,
+          options: isMine ? ['Annulla', 'Copia', 'Elimina'] : ['Annulla', 'Copia'],
+          destructiveButtonIndex: isMine ? 2 : undefined,
           cancelButtonIndex: 0,
         },
-        (buttonIndex) => {
-          if (buttonIndex === 1) {
-            handleCopy(message.content || message.message);
-          } else if (buttonIndex === 2 && isMyMessage) {
-            handleDelete(message.id);
-          }
+        (idx) => {
+          if (idx === 1) Alert.alert('Copiato');
+          if (idx === 2 && isMine) handleDelete(message.id);
         }
       );
     } else {
       const buttons = [
         { text: 'Annulla', style: 'cancel' },
-        { text: 'Copia', onPress: () => handleCopy(message.content || message.message) },
+        { text: 'Copia', onPress: () => Alert.alert('Copiato') },
       ];
-      
-      if (isMyMessage) {
-        buttons.push({ 
-          text: 'Elimina', 
-          style: 'destructive', 
-          onPress: () => handleDelete(message.id) 
-        });
-      }
-
-      Alert.alert('Opzioni messaggio', null, buttons);
+      if (isMine) buttons.push({ text: 'Elimina', style: 'destructive', onPress: () => handleDelete(message.id) });
+      Alert.alert('Opzioni', null, buttons);
     }
   };
 
-  // Formatta la data
+  // ==================== FORMATTERS ====================
+
   const formatTime = (dateString) => {
     const date = new Date(dateString);
     return date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
@@ -218,20 +391,16 @@ const GroupChat = ({ groupId, currentUserId }) => {
     const yesterday = new Date(today);
     yesterday.setDate(yesterday.getDate() - 1);
 
-    if (date.toDateString() === today.toDateString()) {
-      return 'Oggi';
-    } else if (date.toDateString() === yesterday.toDateString()) {
-      return 'Ieri';
-    }
+    if (date.toDateString() === today.toDateString()) return 'Oggi';
+    if (date.toDateString() === yesterday.toDateString()) return 'Ieri';
     return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
   };
 
-  // Raggruppa messaggi per data
-  const groupMessagesByDate = () => {
+  const groupMessagesByDate = useCallback(() => {
     const grouped = [];
     let currentDate = null;
 
-    messages.forEach((msg) => {
+    localMessages.forEach((msg) => {
       const msgDate = formatDate(msg.createdAt);
       if (msgDate !== currentDate) {
         grouped.push({ type: 'date', date: msgDate, id: `date-${msg.id}` });
@@ -241,100 +410,58 @@ const GroupChat = ({ groupId, currentUserId }) => {
     });
 
     return grouped;
-  };
+  }, [localMessages]);
 
   const groupedMessages = groupMessagesByDate();
 
-  // Render messaggio di sistema
-  const renderSystemMessage = (item) => {
-    const isLeaderboard = item.type === 'LEADERBOARD' || item.content?.includes('CLASSIFICA');
-    
-    return (
-      <TouchableWithoutFeedback onPress={dismissKeyboard}>
+  // ==================== RENDER ITEM ====================
+
+  const renderItem = ({ item }) => {
+    // Separatore data
+    if (item.type === 'date') {
+      return (
+        <View style={styles.dateSeparator}>
+          <Text style={styles.dateText}>{item.date}</Text>
+        </View>
+      );
+    }
+
+    // Messaggio di sistema
+    if (item.type === 'SYSTEM' || item.type === 'LEADERBOARD') {
+      return (
         <View style={styles.systemMessageContainer}>
-          <View style={[
-            styles.systemMessageBubble,
-            isLeaderboard && styles.leaderboardMessageBubble
-          ]}>
-            {isLeaderboard && <Text style={styles.leaderboardIcon}>🏆</Text>}
-            <Text style={[
-              styles.systemMessageText,
-              isLeaderboard && styles.leaderboardMessageText
-            ]}>
-              {item.content || item.message}
-            </Text>
+          <View style={styles.systemMessageBubble}>
+            <Text style={styles.systemMessageText}>{item.content || item.message}</Text>
           </View>
         </View>
-      </TouchableWithoutFeedback>
-    );
-  };
+      );
+    }
 
-  // Render messaggio drink log
-  const renderDrinkLogMessage = (item) => {
-    return (
-      <TouchableWithoutFeedback onPress={dismissKeyboard}>
+    // Messaggio drink log
+    if (item.type === 'DRINK_LOG') {
+      return (
         <View style={styles.drinkLogContainer}>
           <View style={styles.drinkLogBubble}>
-            <View style={styles.drinkLogHeader}>
-              {item.sender?.profilePhoto ? (
-                <Image source={{ uri: item.sender.profilePhoto }} style={styles.drinkLogAvatar} />
-              ) : (
-                <View style={styles.drinkLogAvatarPlaceholder}>
-                  <Ionicons name="person" size={12} color={colors.gray} />
-                </View>
-              )}
-              <Text style={styles.drinkLogSender}>
-                {item.sender?.nickname || item.sender?.username || 'Qualcuno'}
-              </Text>
-            </View>
             <Text style={styles.drinkLogText}>{item.content || item.message}</Text>
-            <Text style={styles.drinkLogTime}>{formatTime(item.createdAt)}</Text>
           </View>
         </View>
-      </TouchableWithoutFeedback>
-    );
-  };
+      );
+    }
 
-  // Render messaggio wheel result
-  const renderWheelResultMessage = (item) => {
-    return (
-      <TouchableWithoutFeedback onPress={dismissKeyboard}>
+    // Messaggio wheel result
+    if (item.type === 'WHEEL_RESULT') {
+      return (
         <View style={styles.wheelResultContainer}>
           <View style={styles.wheelResultBubble}>
             <Text style={styles.wheelResultIcon}>🎡</Text>
             <Text style={styles.wheelResultText}>{item.content || item.message}</Text>
-            <Text style={styles.wheelResultTime}>{formatTime(item.createdAt)}</Text>
           </View>
         </View>
-      </TouchableWithoutFeedback>
-    );
-  };
-
-  // Render singolo messaggio
-  const renderItem = ({ item }) => {
-    if (item.type === 'date') {
-      return (
-        <TouchableWithoutFeedback onPress={dismissKeyboard}>
-          <View style={styles.dateSeparator}>
-            <Text style={styles.dateText}>{item.date}</Text>
-          </View>
-        </TouchableWithoutFeedback>
       );
     }
 
-    if (item.type === 'SYSTEM' || item.type === 'LEADERBOARD') {
-      return renderSystemMessage(item);
-    }
-
-    if (item.type === 'DRINK_LOG') {
-      return renderDrinkLogMessage(item);
-    }
-
-    if (item.type === 'WHEEL_RESULT') {
-      return renderWheelResultMessage(item);
-    }
-
-    const isMe = item.sender?.id === currentUserId || item.senderId === currentUserId || item.isMe;
+    // Messaggio normale
+    const isMe = item.isMe === true;
 
     return (
       <TouchableOpacity
@@ -345,22 +472,23 @@ const GroupChat = ({ groupId, currentUserId }) => {
         activeOpacity={0.7}
       >
         <View style={[
-          styles.messageBubble, 
+          styles.messageBubble,
           isMe ? styles.messageBubbleMe : styles.messageBubbleOther,
           item.isDeleted && styles.messageBubbleDeleted
         ]}>
+          {/* Nome mittente (solo per messaggi degli altri) */}
           {!isMe && !item.isDeleted && (
             <Text style={styles.senderName}>
               {item.sender?.nickname || item.sender?.username || 'Utente'}
             </Text>
           )}
-          <Text style={[
-            styles.messageText, 
-            isMe && styles.messageTextMe,
-            item.isDeleted && styles.messageTextDeleted
-          ]}>
+          
+          {/* Testo messaggio */}
+          <Text style={[styles.messageText, item.isDeleted && styles.messageTextDeleted]}>
             {item.isDeleted ? '🚫 Messaggio eliminato' : (item.content || item.message)}
           </Text>
+          
+          {/* Orario */}
           {!item.isDeleted && (
             <Text style={[styles.messageTime, isMe && styles.messageTimeMe]}>
               {formatTime(item.createdAt)}
@@ -371,7 +499,10 @@ const GroupChat = ({ groupId, currentUserId }) => {
     );
   };
 
-  if (isLoading) {
+  // ==================== RENDER PRINCIPALE ====================
+
+  // Loading state
+  if (isLoading && localMessages.length === 0) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.primary} />
@@ -382,11 +513,19 @@ const GroupChat = ({ groupId, currentUserId }) => {
 
   return (
     <View style={styles.container}>
+      {/* Banner connessione */}
+      {!isConnected && (
+        <TouchableOpacity style={styles.connectionBanner} onPress={reconnect}>
+          <Ionicons name="cloud-offline" size={14} color={colors.warning} />
+          <Text style={styles.connectionText}>Connessione... Tocca per riprovare</Text>
+        </TouchableOpacity>
+      )}
+
       {/* Lista messaggi */}
       <FlatList
         ref={flatListRef}
         data={groupedMessages}
-        keyExtractor={(item) => item.id?.toString() || Math.random().toString()}
+        keyExtractor={(item) => item.id?.toString() || `temp-${Math.random()}`}
         renderItem={renderItem}
         contentContainerStyle={[
           styles.messagesList,
@@ -395,33 +534,38 @@ const GroupChat = ({ groupId, currentUserId }) => {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
-        onScrollBeginDrag={dismissKeyboard}
         ListEmptyComponent={
-          <TouchableWithoutFeedback onPress={dismissKeyboard}>
-            <View style={styles.emptyContainer}>
-              <Text style={styles.emptyEmoji}>💬</Text>
-              <Text style={styles.emptyText}>Nessun messaggio</Text>
-              <Text style={styles.emptySubtext}>Inizia la conversazione!</Text>
-            </View>
-          </TouchableWithoutFeedback>
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyEmoji}>💬</Text>
+            <Text style={styles.emptyText}>Nessun messaggio</Text>
+            <Text style={styles.emptySubtext}>Inizia la conversazione!</Text>
+          </View>
         }
       />
 
+      {/* Indicatore typing */}
+      {typingUsers.length > 0 && (
+        <View style={styles.typingContainer}>
+          <Text style={styles.typingText}>
+            {typingUsers.length === 1
+              ? `${typingUsers[0].username} sta scrivendo...`
+              : `${typingUsers.length} persone stanno scrivendo...`}
+          </Text>
+        </View>
+      )}
+
       {/* Input messaggio */}
-      <View style={[
-        styles.inputContainer,
-        { transform: [{ translateY: -keyboardOffset }] }
-      ]}>
+      <View style={[styles.inputContainer, { transform: [{ translateY: -keyboardOffset }] }]}>
         <TextInput
           style={styles.input}
           placeholder="Scrivi un messaggio..."
           placeholderTextColor={colors.textMuted}
           value={messageText}
-          onChangeText={setMessageText}
+          onChangeText={handleTextChange}
           multiline
           maxLength={1000}
         />
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.sendButton, (!messageText.trim() || isSending) && styles.sendButtonDisabled]}
           onPress={handleSend}
           disabled={!messageText.trim() || isSending}
@@ -437,6 +581,7 @@ const GroupChat = ({ groupId, currentUserId }) => {
   );
 };
 
+// ==================== STYLES ====================
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -452,15 +597,38 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: spacing.md,
   },
-
-  // Messages list
+  connectionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.warning + '20',
+    paddingVertical: spacing.xs,
+  },
+  connectionText: {
+    ...typography.caption,
+    color: colors.warning,
+    marginLeft: spacing.xs,
+  },
   messagesList: {
     padding: spacing.md,
     paddingBottom: 70,
     flexGrow: 1,
   },
-
-  // Date separator
+  typingContainer: {
+    position: 'absolute',
+    bottom: 60,
+    left: spacing.md,
+    right: spacing.md,
+    backgroundColor: colors.white,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.md,
+  },
+  typingText: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    fontStyle: 'italic',
+  },
   dateSeparator: {
     alignItems: 'center',
     marginVertical: spacing.sm,
@@ -474,8 +642,6 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.round,
     fontSize: 11,
   },
-
-  // System Message
   systemMessageContainer: {
     alignItems: 'center',
     marginVertical: spacing.sm,
@@ -493,23 +659,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontStyle: 'italic',
   },
-  leaderboardMessageBubble: {
-    backgroundColor: colors.warning + '15',
-    borderWidth: 1,
-    borderColor: colors.warning + '30',
-  },
-  leaderboardIcon: {
-    fontSize: 24,
-    textAlign: 'center',
-    marginBottom: spacing.xs,
-  },
-  leaderboardMessageText: {
-    color: colors.textPrimary,
-    fontStyle: 'normal',
-    fontWeight: '500',
-  },
-
-  // Drink Log Message
   drinkLogContainer: {
     alignItems: 'center',
     marginVertical: spacing.xs,
@@ -523,45 +672,11 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     maxWidth: '85%',
   },
-  drinkLogHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.xs,
-  },
-  drinkLogAvatar: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    marginRight: spacing.xs,
-  },
-  drinkLogAvatarPlaceholder: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: colors.lightGray,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: spacing.xs,
-  },
-  drinkLogSender: {
-    ...typography.caption,
-    fontWeight: '600',
-    color: colors.bevi,
-  },
   drinkLogText: {
     ...typography.body,
     color: colors.textPrimary,
     fontSize: 14,
   },
-  drinkLogTime: {
-    ...typography.caption,
-    color: colors.textTertiary,
-    fontSize: 10,
-    marginTop: spacing.xs,
-    textAlign: 'right',
-  },
-
-  // Wheel Result Message
   wheelResultContainer: {
     alignItems: 'center',
     marginVertical: spacing.sm,
@@ -586,14 +701,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 14,
   },
-  wheelResultTime: {
-    ...typography.caption,
-    color: colors.textTertiary,
-    fontSize: 10,
-    marginTop: spacing.xs,
-  },
-
-  // Normal Message
   messageContainer: {
     marginBottom: spacing.xs,
     alignItems: 'flex-start',
@@ -631,9 +738,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 20,
   },
-  messageTextMe: {
-    color: colors.textPrimary,
-  },
   messageTextDeleted: {
     color: colors.textTertiary,
     fontStyle: 'italic',
@@ -649,8 +753,6 @@ const styles = StyleSheet.create({
   messageTimeMe: {
     color: colors.gray,
   },
-
-  // Empty
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -669,8 +771,6 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.textTertiary,
   },
-
-  // Input
   inputContainer: {
     position: 'absolute',
     left: 0,
