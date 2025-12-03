@@ -1,5 +1,6 @@
 // src/screens/GroupsScreen/GroupInfoScreen.js
 // Schermata info gruppo con membri, impostazioni e abbandona
+// ✅ AGGIORNATO: Upload immagine gruppo su Cloudinary
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -23,7 +24,9 @@ import {
   useLeaveGroupMutation,
   useUpdateGroupChallengeSettingsMutation,
   usePublishGroupLeaderboardMutation,
+  useUploadGroupImageMutation,
 } from '../../api/beviApi';
+import { showImagePicker, formatFileSize } from '../../utils/imageUtils';
 
 const ROLE_LABELS = {
   ADMIN: { label: 'Admin', color: colors.primary, icon: 'shield' },
@@ -230,6 +233,7 @@ const GroupInfoScreen = ({ route, navigation }) => {
   const [isMuted, setIsMuted] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false); // ✅ NUOVO
 
   // API hooks
   const { data: groupData, isLoading: groupLoading, refetch: refetchGroup } = useGetGroupByIdQuery(groupId);
@@ -237,6 +241,7 @@ const GroupInfoScreen = ({ route, navigation }) => {
   const [leaveGroup, { isLoading: isLeaving }] = useLeaveGroupMutation();
   const [updateChallengeSettings, { isLoading: isUpdating }] = useUpdateGroupChallengeSettingsMutation();
   const [publishLeaderboard, { isLoading: isPublishing }] = usePublishGroupLeaderboardMutation();
+  const [uploadGroupImage] = useUploadGroupImageMutation(); // ✅ NUOVO
 
   // Estrai dati
   const group = groupData?.data?.group || groupData?.data || groupData;
@@ -252,6 +257,71 @@ const GroupInfoScreen = ({ route, navigation }) => {
     const roleOrder = { ADMIN: 0, MODERATOR: 1, MEMBER: 2 };
     return (roleOrder[a.role] || 2) - (roleOrder[b.role] || 2);
   });
+
+  // ✅ NUOVO: Gestione upload immagine gruppo
+  const handleChangeGroupImage = async () => {
+    if (!isAdmin) {
+      Alert.alert('Non autorizzato', 'Solo gli admin possono cambiare l\'immagine del gruppo');
+      return;
+    }
+
+    console.log('🖼️ [1] Inizio cambio immagine gruppo...');
+    console.log('🖼️ [1.1] Group ID:', groupId);
+    
+    try {
+      // Mostra picker immagine (camera o galleria)
+      const imageResult = await showImagePicker({
+        title: 'Cambia immagine gruppo',
+        message: 'Scegli da dove caricare la foto',
+        allowsEditing: true,
+        aspect: [1, 1], // Immagine quadrata
+        quality: 0.8,
+      });
+
+      if (!imageResult) {
+        console.log('🖼️ [2] Utente ha annullato');
+        return;
+      }
+
+      console.log('📸 [2] Immagine selezionata:', {
+        uri: imageResult.uri,
+        size: formatFileSize(imageResult.size),
+        hasBase64: !!imageResult.base64,
+        base64Length: imageResult.base64?.length,
+      });
+      
+      setIsUploadingImage(true);
+
+      console.log('📤 [3] Invio richiesta uploadGroupImage...');
+      
+      // Upload su Cloudinary via endpoint /api/upload
+      const result = await uploadGroupImage({
+        groupId: groupId,
+        image: imageResult.base64,
+      }).unwrap();
+
+      console.log('✅ [4] Risposta ricevuta:', JSON.stringify(result, null, 2));
+
+      // Refetch per aggiornare l'immagine
+      refetchGroup();
+
+      Alert.alert('Successo! 📸', 'L\'immagine del gruppo è stata aggiornata');
+
+    } catch (error) {
+      console.error('❌ [ERROR] Errore upload immagine gruppo:', {
+        message: error?.message,
+        status: error?.status,
+        data: error?.data,
+        fullError: JSON.stringify(error, null, 2),
+      });
+      Alert.alert(
+        'Errore',
+        error?.data?.message || 'Impossibile aggiornare l\'immagine del gruppo'
+      );
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
 
   // Gestisci cambio categoria
   const handleCategoryChange = async (newCategory) => {
@@ -385,6 +455,9 @@ const GroupInfoScreen = ({ route, navigation }) => {
     );
   }
 
+  // Estrai immagine gruppo
+  const groupImage = group?.image || group?.imageUrl;
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -402,9 +475,39 @@ const GroupInfoScreen = ({ route, navigation }) => {
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Info gruppo */}
         <View style={styles.groupHeader}>
-          <View style={styles.groupAvatarLarge}>
-            <Text style={styles.groupEmoji}>👥</Text>
+          {/* ✅ AGGIORNATO: Avatar gruppo cliccabile per admin */}
+          <View style={styles.groupAvatarContainer}>
+            <TouchableOpacity 
+              style={styles.groupAvatarLarge}
+              onPress={isAdmin ? handleChangeGroupImage : undefined}
+              disabled={!isAdmin || isUploadingImage}
+              activeOpacity={isAdmin ? 0.8 : 1}
+            >
+              {isUploadingImage ? (
+                <ActivityIndicator size="large" color={colors.primary} />
+              ) : groupImage ? (
+                <Image source={{ uri: groupImage }} style={styles.groupAvatarImage} />
+              ) : (
+                <Text style={styles.groupEmoji}>{group?.emoji || '👥'}</Text>
+              )}
+            </TouchableOpacity>
+            
+            {/* ✅ NUOVO: Pulsante modifica immagine (solo admin) */}
+            {isAdmin && (
+              <TouchableOpacity 
+                style={[styles.editGroupImageButton, isUploadingImage && styles.editGroupImageButtonDisabled]}
+                onPress={handleChangeGroupImage}
+                disabled={isUploadingImage}
+              >
+                {isUploadingImage ? (
+                  <ActivityIndicator size="small" color={colors.white} />
+                ) : (
+                  <Ionicons name="camera" size={16} color={colors.white} />
+                )}
+              </TouchableOpacity>
+            )}
           </View>
+          
           <Text style={styles.groupName}>{group?.name || groupName}</Text>
           <Text style={styles.groupMeta}>
             Gruppo • {members.length} {members.length === 1 ? 'membro' : 'membri'}
@@ -520,6 +623,16 @@ const GroupInfoScreen = ({ route, navigation }) => {
         currentValue={group?.leaderboardMode || 'OPEN'}
         onSelect={handleLeaderboardModeChange}
       />
+
+      {/* ✅ NUOVO: Overlay loading durante upload */}
+      {isUploadingImage && (
+        <View style={styles.uploadingOverlay}>
+          <View style={styles.uploadingBox}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.uploadingText}>Aggiornamento immagine...</Text>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 };
@@ -569,6 +682,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+  // ✅ NUOVO: Container per avatar gruppo
+  groupAvatarContainer: {
+    position: 'relative',
+    marginBottom: spacing.md,
+  },
   groupAvatarLarge: {
     width: 80,
     height: 80,
@@ -576,10 +694,33 @@ const styles = StyleSheet.create({
     backgroundColor: colors.veryLightGray,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: spacing.md,
+    overflow: 'hidden',
+  },
+  // ✅ NUOVO: Immagine gruppo
+  groupAvatarImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
   },
   groupEmoji: {
     fontSize: 40,
+  },
+  // ✅ NUOVO: Pulsante modifica immagine gruppo
+  editGroupImageButton: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: colors.white,
+  },
+  editGroupImageButtonDisabled: {
+    backgroundColor: colors.gray,
   },
   groupName: {
     ...typography.h2,
@@ -851,6 +992,25 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textTertiary,
     marginTop: 2,
+  },
+
+  // ✅ NUOVO: Overlay upload
+  uploadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  uploadingBox: {
+    backgroundColor: colors.white,
+    borderRadius: borderRadius.lg,
+    padding: spacing.xl,
+    alignItems: 'center',
+  },
+  uploadingText: {
+    ...typography.body,
+    color: colors.textPrimary,
+    marginTop: spacing.md,
   },
 });
 

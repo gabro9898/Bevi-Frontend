@@ -1,5 +1,6 @@
 // src/screens/GroupsScreen/GroupsScreen.js
 // Schermata lista gruppi - Stile WhatsApp
+// ✅ AGGIORNATO: Mostra immagine gruppo se presente
 
 import React, { useState } from 'react';
 import { 
@@ -14,6 +15,7 @@ import {
   TextInput,
   Modal,
   Alert,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -49,10 +51,14 @@ const formatLastMessageTime = (dateString) => {
 };
 
 // Componente per il singolo gruppo - Stile WhatsApp
+// ✅ AGGIORNATO: Supporta immagine gruppo
 const GroupCard = ({ group, onPress, isLast }) => {
   const unreadCount = group.unreadCount || group.membership?.unreadCount || 0;
   const lastMessage = group.lastMessage || group.lastMessageText;
   const lastActivity = group.lastActivityAt || group.updatedAt;
+  
+  // ✅ NUOVO: Estrai immagine gruppo
+  const groupImage = group.image || group.imageUrl;
   
   return (
     <TouchableOpacity 
@@ -60,9 +66,16 @@ const GroupCard = ({ group, onPress, isLast }) => {
       onPress={onPress}
       activeOpacity={0.6}
     >
-      {/* Avatar */}
+      {/* Avatar - ✅ AGGIORNATO: Mostra immagine se presente */}
       <View style={styles.groupAvatar}>
-        <Text style={styles.groupEmoji}>{group.emoji || '👥'}</Text>
+        {groupImage ? (
+          <Image 
+            source={{ uri: groupImage }} 
+            style={styles.groupAvatarImage} 
+          />
+        ) : (
+          <Text style={styles.groupEmoji}>{group.emoji || '👥'}</Text>
+        )}
       </View>
       
       {/* Info centrale */}
@@ -417,6 +430,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.veryLightGray,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden', // ✅ NUOVO: Per ritagliare l'immagine
+  },
+  // ✅ NUOVO: Stile immagine gruppo
+  groupAvatarImage: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
   },
   groupEmoji: {
     fontSize: 28,

@@ -1,5 +1,7 @@
 // src/screens/GroupsScreen/components/GroupChat.js
 // ✅ VERSIONE CORRETTA - Fix race condition RTK Query vs WebSocket
+// ✅ AGGIORNATO: Mostra immagine bevuta nei messaggi DRINK_LOG
+// 🔍 DEBUG: Log per verificare dati DRINK_LOG
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
@@ -14,6 +16,7 @@ import {
   Alert,
   ActionSheetIOS,
   Keyboard,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -62,8 +65,6 @@ const GroupChat = ({ groupId, currentUserId }) => {
     error,
   } = useGetGroupMessagesQuery(groupId, {
     skip: !groupId,
-    // ✅ FIX: Disabilita TUTTI i refetch automatici
-    // I nuovi messaggi arrivano SOLO via WebSocket!
     refetchOnMountOrArgChange: false,
     refetchOnFocus: false,
     refetchOnReconnect: false,
@@ -86,45 +87,34 @@ const GroupChat = ({ groupId, currentUserId }) => {
 
   // ==================== WEBSOCKET CALLBACKS ====================
 
-  /**
-   * Handler per nuovo messaggio via WebSocket
-   * ✅ FIX: Aggiunge al localMessages senza aspettare API
-   */
   const handleNewMessage = useCallback((message) => {
     console.log('📩 WS: nuovo messaggio', message.id);
 
     setLocalMessages(prev => {
       const messageId = normalizeId(message.id);
       
-      // Controlla duplicati
       const exists = prev.some(m => normalizeId(m.id) === messageId);
       if (exists) {
         console.log('   - Duplicato, ignoro');
         return prev;
       }
 
-      // Calcola isMe
       const senderId = normalizeId(message.sender?.id || message.senderId);
       const isMe = senderId === myUserId;
 
       console.log('   - Aggiunto, isMe:', isMe);
       
-      // Aggiungi e ordina per data
       const updated = [...prev, { ...message, isMe }];
       updated.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
       
       return updated;
     });
 
-    // Scrolla in fondo
     setTimeout(() => {
       flatListRef.current?.scrollToEnd({ animated: true });
     }, 100);
   }, [myUserId, normalizeId]);
 
-  /**
-   * Handler per messaggio eliminato via WebSocket
-   */
   const handleMessageDeleted = useCallback((data) => {
     const messageId = normalizeId(typeof data === 'string' ? data : data.messageId);
     console.log('🗑️ WS: messaggio eliminato:', messageId);
@@ -138,9 +128,6 @@ const GroupChat = ({ groupId, currentUserId }) => {
     );
   }, [normalizeId]);
 
-  /**
-   * Handler per utente che scrive
-   */
   const handleUserTyping = useCallback((data) => {
     const typingUserId = normalizeId(data.userId);
     if (typingUserId === myUserId) return;
@@ -157,7 +144,6 @@ const GroupChat = ({ groupId, currentUserId }) => {
       }
     });
 
-    // Auto-rimuovi dopo 3 secondi
     setTimeout(() => {
       setTypingUsers(prev => prev.filter(u => normalizeId(u.userId) !== typingUserId));
     }, 3000);
@@ -173,9 +159,6 @@ const GroupChat = ({ groupId, currentUserId }) => {
 
   // ==================== EFFETTI ====================
 
-  /**
-   * Reset quando cambia gruppo
-   */
   useEffect(() => {
     if (previousGroupId.current !== groupId) {
       console.log('🔄 Cambio gruppo:', previousGroupId.current, '->', groupId);
@@ -187,30 +170,22 @@ const GroupChat = ({ groupId, currentUserId }) => {
     }
   }, [groupId]);
 
-  /**
-   * ⭐ CARICAMENTO INIZIALE dal server
-   * ✅ FIX CRITICO: Carica SOLO UNA VOLTA, poi i messaggi arrivano via WebSocket
-   */
   useEffect(() => {
-    // Skip se già caricato
     if (initialLoadDone) {
       console.log('⏭️ Skip: caricamento iniziale già fatto');
       return;
     }
 
-    // Skip se sta caricando
     if (isLoading) {
       console.log('⏳ Skip: ancora in loading');
       return;
     }
 
-    // Skip se sta facendo refetch (NON sovrascrivere!)
     if (isFetching && localMessages.length > 0) {
       console.log('⏭️ Skip: isFetching ma ho già messaggi locali');
       return;
     }
 
-    // Skip se non ci sono dati
     if (!messagesData) {
       console.log('⏭️ Skip: messagesData è null');
       return;
@@ -218,7 +193,6 @@ const GroupChat = ({ groupId, currentUserId }) => {
 
     console.log('⭐ Caricamento iniziale messaggi...');
 
-    // Estrai messaggi dalla risposta (supporta vari formati)
     let serverMessages = null;
     if (messagesData?.data?.messages && Array.isArray(messagesData.data.messages)) {
       serverMessages = messagesData.data.messages;
@@ -237,16 +211,13 @@ const GroupChat = ({ groupId, currentUserId }) => {
 
     console.log('   📬 Messaggi dal server:', serverMessages.length);
 
-    // Processa i messaggi
     const processed = processMessages(serverMessages);
     
-    // Imposta i messaggi locali
     setLocalMessages(processed);
     setInitialLoadDone(true);
 
     console.log('   ✅ Caricamento iniziale completato:', processed.length, 'messaggi');
 
-    // Scrolla in fondo
     if (processed.length > 0) {
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: false });
@@ -254,9 +225,6 @@ const GroupChat = ({ groupId, currentUserId }) => {
     }
   }, [messagesData, isLoading, isFetching, initialLoadDone, processMessages, localMessages.length]);
 
-  /**
-   * Segna messaggi come letti
-   */
   useEffect(() => {
     if (localMessages.length > 0 && !hasMarkedAsRead.current && groupId) {
       hasMarkedAsRead.current = true;
@@ -265,9 +233,6 @@ const GroupChat = ({ groupId, currentUserId }) => {
     }
   }, [groupId, localMessages.length, markAsRead]);
 
-  /**
-   * Gestione tastiera
-   */
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
@@ -291,9 +256,6 @@ const GroupChat = ({ groupId, currentUserId }) => {
     };
   }, [insets.bottom]);
 
-  /**
-   * Cleanup typing timeout
-   */
   useEffect(() => {
     return () => {
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
@@ -326,10 +288,9 @@ const GroupChat = ({ groupId, currentUserId }) => {
     try {
       console.log('📤 Invio messaggio:', text);
       await sendMessage({ groupId, message: text }).unwrap();
-      // ✅ NON scrollare qui - il messaggio arriva via WebSocket e lo scroll è lì
     } catch (error) {
       console.log('❌ Errore invio:', error);
-      setMessageText(text); // Ripristina il testo
+      setMessageText(text);
       Alert.alert('Errore', 'Impossibile inviare il messaggio');
     }
   };
@@ -343,7 +304,6 @@ const GroupChat = ({ groupId, currentUserId }) => {
         onPress: async () => {
           try {
             await deleteMessage(messageId).unwrap();
-            // ✅ L'aggiornamento arriva via WebSocket
           } catch (error) {
             Alert.alert('Errore', 'Impossibile eliminare');
           }
@@ -437,11 +397,37 @@ const GroupChat = ({ groupId, currentUserId }) => {
       );
     }
 
-    // Messaggio drink log
+    // ✅ AGGIORNATO: Messaggio drink log con immagine
     if (item.type === 'DRINK_LOG') {
+      // 🔍 DEBUG - Vediamo cosa arriva
+      console.log('🍺 DRINK_LOG DEBUG:', JSON.stringify({
+        id: item.id,
+        imageUrl: item.imageUrl,
+        drinkLog: item.drinkLog,
+        content: item.content?.substring(0, 50),
+      }, null, 2));
+      
+      // Estrai URL immagine da vari possibili campi
+      const drinkPhotoUrl = item.imageUrl || item.drinkLog?.photoUrl || item.metadata?.photoUrl;
+      
+      console.log('🖼️ drinkPhotoUrl finale:', drinkPhotoUrl);
+      
+      // Solo URL Cloudinary sono validi (i file:// locali non funzionano)
+      const isValidCloudinaryUrl = drinkPhotoUrl && drinkPhotoUrl.startsWith('https://res.cloudinary.com');
+      
       return (
         <View style={styles.drinkLogContainer}>
           <View style={styles.drinkLogBubble}>
+            {/* ✅ Immagine della bevuta (solo se URL Cloudinary valido) */}
+            {isValidCloudinaryUrl && (
+              <Image 
+                source={{ uri: drinkPhotoUrl }} 
+                style={styles.drinkLogImage}
+                resizeMode="cover"
+                onLoad={() => console.log('✅ Immagine caricata:', drinkPhotoUrl.substring(0, 50))}
+                onError={(e) => console.log('❌ Errore caricamento immagine:', e.nativeEvent.error)}
+              />
+            )}
             <Text style={styles.drinkLogText}>{item.content || item.message}</Text>
           </View>
         </View>
@@ -501,7 +487,6 @@ const GroupChat = ({ groupId, currentUserId }) => {
 
   // ==================== RENDER PRINCIPALE ====================
 
-  // Loading state
   if (isLoading && localMessages.length === 0) {
     return (
       <View style={styles.loadingContainer}>
@@ -659,23 +644,31 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontStyle: 'italic',
   },
+  // ✅ AGGIORNATO: Stili drink log con immagine
   drinkLogContainer: {
     alignItems: 'center',
-    marginVertical: spacing.xs,
+    marginVertical: spacing.sm,
   },
   drinkLogBubble: {
     backgroundColor: colors.bevi + '15',
     borderWidth: 1,
     borderColor: colors.bevi + '30',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
     borderRadius: borderRadius.lg,
-    maxWidth: '85%',
+    width: 280, // Larghezza fissa invece di maxWidth
+    overflow: 'hidden',
+  },
+  // ✅ NUOVO: Stile immagine bevuta con dimensioni fisse
+  drinkLogImage: {
+    width: 280,
+    height: 200,
+    backgroundColor: colors.veryLightGray,
   },
   drinkLogText: {
     ...typography.body,
     color: colors.textPrimary,
     fontSize: 14,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
   },
   wheelResultContainer: {
     alignItems: 'center',

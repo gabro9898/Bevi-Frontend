@@ -1,5 +1,6 @@
 // src/screens/GroupsScreen/GroupDetailScreen.js
 // Schermata dettaglio gruppo con tabs: Chat, Ruota, Classifica
+// ✅ AGGIORNATO: Immagine gruppo nell'header
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -11,6 +12,7 @@ import {
   ActivityIndicator,
   Share,
   Alert,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius } from '../../theme';
@@ -86,10 +88,13 @@ const GroupDetailScreen = ({ route, navigation }) => {
   const { data: membersData, isLoading: membersLoading } = useGetGroupMembersQuery(groupId);
   const { data: inviteData } = useGetGroupInviteLinkQuery(groupId);
 
-  // Estrai dati gruppo e membri
-  const group = groupData?.data || groupData;
+  // Estrai dati gruppo e membri - ✅ FIX: groupData.data.group
+  const group = groupData?.data?.group || groupData?.data || groupData;
   const members = membersData?.data?.members || membersData?.data || [];
   const memberCount = members.length;
+
+  // ✅ NUOVO: Estrai immagine gruppo
+  const groupImage = group?.image || group?.imageUrl;
 
   // Estrai codice invito
   const inviteCode = inviteData?.data?.inviteCode || group?.inviteCode;
@@ -149,7 +154,7 @@ const GroupDetailScreen = ({ route, navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
+      {/* Header - ✅ AGGIORNATO con immagine gruppo */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
@@ -158,20 +163,33 @@ const GroupDetailScreen = ({ route, navigation }) => {
           <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
 
-        {/* Nome gruppo cliccabile → va alle info */}
+        {/* ✅ NUOVO: Avatar gruppo nell'header */}
         <TouchableOpacity 
-          style={styles.headerInfo}
+          style={styles.headerContent}
           onPress={handleGoToInfo}
           activeOpacity={0.7}
         >
-          <Text style={styles.headerTitle} numberOfLines={1}>
-            {group?.name || groupName}
-          </Text>
-          <View style={styles.headerSubtitleRow}>
-            <Text style={styles.headerSubtitle}>
-              {membersLoading ? '...' : memberCount} {memberCount === 1 ? 'membro' : 'membri'}
+          <View style={styles.headerAvatar}>
+            {groupImage ? (
+              <Image 
+                source={{ uri: groupImage }} 
+                style={styles.headerAvatarImage} 
+              />
+            ) : (
+              <Text style={styles.headerAvatarEmoji}>{group?.emoji || '👥'}</Text>
+            )}
+          </View>
+          
+          <View style={styles.headerInfo}>
+            <Text style={styles.headerTitle} numberOfLines={1}>
+              {group?.name || groupName}
             </Text>
-            <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} />
+            <View style={styles.headerSubtitleRow}>
+              <Text style={styles.headerSubtitle}>
+                {membersLoading ? '...' : memberCount} {memberCount === 1 ? 'membro' : 'membri'}
+              </Text>
+              <Ionicons name="chevron-forward" size={14} color={colors.textTertiary} />
+            </View>
           </View>
         </TouchableOpacity>
 
@@ -221,12 +239,12 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
 
-  // Header
+  // Header - ✅ AGGIORNATO
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.md,
+    paddingVertical: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     backgroundColor: colors.white,
@@ -235,13 +253,39 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     marginRight: spacing.xs,
   },
+  // ✅ NUOVO: Container con avatar e info
+  headerContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  // ✅ NUOVO: Avatar nell'header
+  headerAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.veryLightGray,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.sm,
+    overflow: 'hidden',
+  },
+  headerAvatarImage: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+  },
+  headerAvatarEmoji: {
+    fontSize: 20,
+  },
   headerInfo: {
     flex: 1,
     paddingVertical: spacing.xs,
   },
   headerTitle: {
-    ...typography.h3,
-    fontSize: 17,
+    ...typography.body,
+    fontWeight: '600',
+    fontSize: 16,
   },
   headerSubtitleRow: {
     flexDirection: 'row',
@@ -250,6 +294,7 @@ const styles = StyleSheet.create({
   headerSubtitle: {
     ...typography.caption,
     color: colors.textSecondary,
+    fontSize: 12,
   },
   shareButton: {
     padding: spacing.sm,

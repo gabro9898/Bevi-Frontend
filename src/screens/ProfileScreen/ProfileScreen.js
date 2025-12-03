@@ -1,7 +1,8 @@
 // src/screens/ProfileScreen/ProfileScreen.js
 // Schermata profilo utente con statistiche reali
+// ✅ AGGIORNATO: Upload avatar su Cloudinary
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   View, 
   Text, 
@@ -12,6 +13,7 @@ import {
   RefreshControl,
   ActivityIndicator,
   Image,
+  Alert,
 } from 'react-native';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation } from '@react-navigation/native';
@@ -19,7 +21,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 import { clearCredentials, selectCurrentUser, setUser } from '../../store/slices/authSlice';
 import { clearTokens } from '../../api/apiClient';
-import { useGetMeQuery, useGetMyDrinkStatsQuery } from '../../api/beviApi';
+import { 
+  useGetMeQuery, 
+  useGetMyDrinkStatsQuery,
+  useUploadAvatarMutation,
+} from '../../api/beviApi';
+import { showImagePicker, formatFileSize, estimateBase64Size } from '../../utils/imageUtils';
 
 const StatCard = ({ icon, value, label, color }) => (
   <View style={styles.statCard}>
@@ -46,6 +53,9 @@ const ProfileScreen = () => {
   const navigation = useNavigation();
   const currentUser = useSelector(selectCurrentUser);
   
+  // ✅ NUOVO: Stati per upload avatar
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  
   // Query per il profilo (chiama /auth/me)
   const { 
     data: meData, 
@@ -60,6 +70,9 @@ const ProfileScreen = () => {
     isLoading: statsLoading,
     refetch: refetchStats 
   } = useGetMyDrinkStatsQuery();
+
+  // ✅ Mutation per avatar
+  const [uploadAvatar] = useUploadAvatarMutation();
 
   const [refreshing, setRefreshing] = React.useState(false);
 
@@ -92,6 +105,60 @@ const ProfileScreen = () => {
     navigation.navigate('Analytics');
   };
 
+  // ✅ Menu per cambiare avatar
+  const handleChangeAvatar = async () => {
+    try {
+      // Mostra picker immagine (camera o galleria)
+      const imageResult = await showImagePicker({
+        title: 'Cambia foto profilo',
+        message: 'Scegli da dove caricare la foto',
+        allowsEditing: true,
+        aspect: [1, 1], // Avatar quadrato
+        quality: 0.8,
+      });
+
+      if (!imageResult) {
+        // Utente ha annullato
+        return;
+      }
+
+      console.log('📸 Immagine selezionata:', formatFileSize(imageResult.size));
+      
+      setIsUploadingAvatar(true);
+
+      // Upload su Cloudinary via endpoint /api/upload
+      const result = await uploadAvatar({
+        userId: user.id,
+        image: imageResult.base64,
+      }).unwrap();
+
+      console.log('✅ Avatar aggiornato:', result);
+
+      // Aggiorna lo store locale con il nuovo URL
+      const newProfilePhoto = result?.data?.url || result?.data?.profilePhoto || result?.url;
+      if (newProfilePhoto) {
+        dispatch(setUser({
+          ...user,
+          profilePhoto: newProfilePhoto,
+        }));
+      }
+
+      // Refetch per sicurezza
+      refetchMe();
+
+      Alert.alert('Successo! 📸', 'La tua foto profilo è stata aggiornata');
+
+    } catch (error) {
+      console.error('Errore upload avatar:', error);
+      Alert.alert(
+        'Errore',
+        error?.data?.message || 'Impossibile aggiornare la foto profilo'
+      );
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
   const isLoading = meLoading || statsLoading;
 
   if (isLoading && !user?.username) {
@@ -121,15 +188,33 @@ const ProfileScreen = () => {
         {/* Header Profilo */}
         <View style={styles.header}>
           <View style={styles.avatarContainer}>
-            <View style={styles.avatar}>
-              {user?.profilePhoto ? (
+            {/* ✅ Avatar con loading */}
+            <TouchableOpacity 
+              style={styles.avatar}
+              onPress={handleChangeAvatar}
+              disabled={isUploadingAvatar}
+              activeOpacity={0.8}
+            >
+              {isUploadingAvatar ? (
+                <ActivityIndicator size="large" color={colors.primary} />
+              ) : user?.profilePhoto ? (
                 <Image source={{ uri: user.profilePhoto }} style={styles.avatarImage} />
               ) : (
                 <Ionicons name="person" size={48} color={colors.gray} />
               )}
-            </View>
-            <TouchableOpacity style={styles.editAvatarButton}>
-              <Ionicons name="camera" size={16} color={colors.white} />
+            </TouchableOpacity>
+            
+            {/* ✅ Pulsante modifica avatar */}
+            <TouchableOpacity 
+              style={[styles.editAvatarButton, isUploadingAvatar && styles.editAvatarButtonDisabled]}
+              onPress={handleChangeAvatar}
+              disabled={isUploadingAvatar}
+            >
+              {isUploadingAvatar ? (
+                <ActivityIndicator size="small" color={colors.white} />
+              ) : (
+                <Ionicons name="camera" size={16} color={colors.white} />
+              )}
             </TouchableOpacity>
           </View>
           
@@ -250,6 +335,16 @@ const ProfileScreen = () => {
         {/* Versione */}
         <Text style={styles.version}>Bevi App v1.0.0</Text>
       </ScrollView>
+
+      {/* ✅ NUOVO: Overlay loading durante upload */}
+      {isUploadingAvatar && (
+        <View style={styles.uploadingOverlay}>
+          <View style={styles.uploadingBox}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.uploadingText}>Aggiornamento foto...</Text>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 };
@@ -289,6 +384,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.veryLightGray,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden', // ✅ Assicura che l'immagine sia clippata
   },
   avatarImage: {
     width: 100,
@@ -307,6 +403,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 3,
     borderColor: colors.white,
+  },
+  editAvatarButtonDisabled: {
+    backgroundColor: colors.gray,
   },
   username: {
     ...typography.h2,
@@ -491,6 +590,26 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     textAlign: 'center',
     paddingVertical: spacing.lg,
+  },
+
+  // ✅ NUOVO: Overlay upload
+  uploadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  uploadingBox: {
+    backgroundColor: colors.white,
+    borderRadius: borderRadius.lg,
+    padding: spacing.xl,
+    alignItems: 'center',
+    ...shadows.large,
+  },
+  uploadingText: {
+    ...typography.body,
+    color: colors.textPrimary,
+    marginTop: spacing.md,
   },
 });
 

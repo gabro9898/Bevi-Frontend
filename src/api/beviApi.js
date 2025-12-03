@@ -1,6 +1,6 @@
 // src/api/beviApi.js
 // RTK Query API - Tutti gli endpoints del backend Bevi
-// ✅ VERSIONE CORRETTA - Fix race condition WebSocket
+// ✅ VERSIONE CON UPLOAD CLOUDINARY
 
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -151,6 +151,54 @@ export const beviApi = createApi({
       query: (userId) => `/users/${userId}/stats`,
     }),
 
+    // ==================== UPLOAD IMMAGINI (CLOUDINARY) ====================
+    // Usa endpoint generico: POST /api/upload con type: "profile" | "group" | "drink"
+
+    // Upload avatar profilo
+    uploadAvatar: builder.mutation({
+      query: ({ userId, image }) => ({
+        url: '/upload',
+        method: 'POST',
+        body: { 
+          image, 
+          type: 'profile',
+          targetId: userId,
+        },
+      }),
+      invalidatesTags: ['User'],
+    }),
+
+    // Upload immagine gruppo
+    uploadGroupImage: builder.mutation({
+      query: ({ groupId, image }) => ({
+        url: '/upload',
+        method: 'POST',
+        body: { 
+          image, 
+          type: 'group',
+          targetId: groupId,
+        },
+      }),
+      invalidatesTags: ['Groups'],
+    }),
+
+    // Upload immagine bevuta (pre-upload separato)
+    uploadDrinkImage: builder.mutation({
+      query: ({ image }) => ({
+        url: '/upload/drink-image',
+        method: 'POST',
+        body: { image },
+      }),
+    }),
+
+    // Elimina immagine bevuta
+    deleteDrinkImage: builder.mutation({
+      query: (publicId) => ({
+        url: `/upload/drink-image/${encodeURIComponent(publicId)}`,
+        method: 'DELETE',
+      }),
+    }),
+
     // ==================== LEADERBOARD ====================
 
     getLeaderboardCategories: builder.query({
@@ -224,11 +272,16 @@ export const beviApi = createApi({
 
     // ==================== DRINK LOGS ====================
 
+    // ✅ AGGIORNATO: Ora supporta campo "image" per upload diretto
     createDrinkLog: builder.mutation({
       query: (drinkLogData) => ({
         url: '/drink-logs',
         method: 'POST',
         body: drinkLogData,
+        // drinkLogData può contenere:
+        // - drinkId: string (obbligatorio)
+        // - image: string (base64, opzionale - verrà uploadato su Cloudinary)
+        // - photoUrl + photoPublicId: se l'immagine è già stata uploadata
       }),
       invalidatesTags: ['DrinkLogs', 'Leaderboard', 'User', 'Analytics', 'Cooldown'],
     }),
@@ -544,6 +597,12 @@ export const {
   useSearchUsersQuery,
   useGetUserByIdQuery,
   useGetUserStatsQuery,
+
+  // Upload Immagini
+  useUploadAvatarMutation,
+  useUploadGroupImageMutation,
+  useUploadDrinkImageMutation,
+  useDeleteDrinkImageMutation,
   
   // Leaderboard
   useGetLeaderboardCategoriesQuery,

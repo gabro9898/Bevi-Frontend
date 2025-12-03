@@ -1,5 +1,6 @@
 // src/screens/BeviScreen/BeviScreen.js
 // Schermata per registrare una bevuta con foto
+// ✅ AGGIORNATO: Upload foto su Cloudinary
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
@@ -25,6 +26,7 @@ import {
   useGetCooldownStatusQuery,
   useGetMyDrinkStatsQuery,
 } from '../../api/beviApi';
+import { uriToBase64, formatFileSize, estimateBase64Size } from '../../utils/imageUtils';
 
 // Categorie disponibili
 const DRINK_CATEGORIES = [
@@ -212,6 +214,8 @@ const BeviScreen = () => {
   const [permission, requestPermission] = useCameraPermissions();
   const [cameraOpen, setCameraOpen] = useState(false);
   const [photo, setPhoto] = useState(null);
+  const [photoBase64, setPhotoBase64] = useState(null); // ✅ NUOVO: Base64 per upload
+  const [isConverting, setIsConverting] = useState(false); // ✅ NUOVO: Stato conversione
   const [drinkSelectorVisible, setDrinkSelectorVisible] = useState(false);
   const [facing, setFacing] = useState('back');
   const [localCooldown, setLocalCooldown] = useState(0);
@@ -313,29 +317,76 @@ const BeviScreen = () => {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Scatta foto
+  // ✅ AGGIORNATO: Scatta foto e converti in base64
   const takePicture = async () => {
     if (cameraRef.current) {
       try {
+        setIsConverting(true);
+        
+        console.log('📸 [1] Inizio scatto foto...');
+        
         const photoData = await cameraRef.current.takePictureAsync({
           quality: 0.7,
           base64: false,
         });
+        
+        console.log('📸 [2] Foto scattata:', {
+          uri: photoData.uri,
+          width: photoData.width,
+          height: photoData.height,
+        });
+        
+        // Converti in base64 per upload
+        console.log('📸 [3] Inizio conversione base64...');
+        const base64Image = await uriToBase64(photoData.uri);
+        
+        console.log('📸 [4] Conversione completata:', {
+          lunghezzaBase64: base64Image?.length || 0,
+          inizioStringa: base64Image?.substring(0, 50) + '...',
+        });
+        
+        const imageSize = estimateBase64Size(base64Image);
+        console.log('📸 [5] Dimensione stimata:', formatFileSize(imageSize));
+        
+        // Verifica dimensione (max 10MB)
+        if (imageSize > 10 * 1024 * 1024) {
+          console.log('❌ [6] Immagine troppo grande!');
+          Alert.alert(
+            'Immagine troppo grande',
+            'L\'immagine è troppo grande. Riprova con una qualità inferiore.',
+            [{ text: 'OK' }]
+          );
+          setIsConverting(false);
+          return;
+        }
+        
+        console.log('✅ [6] Immagine OK, salvo in stato...');
         setPhoto(photoData);
+        setPhotoBase64(base64Image);
         setCameraOpen(false);
         setDrinkSelectorVisible(true);
+        
+        console.log('✅ [7] Stato aggiornato, apro selettore bevande');
+        
       } catch (error) {
-        console.log('Errore foto:', error);
+        console.log('❌ Errore foto:', error);
         Alert.alert('Errore', 'Impossibile scattare la foto');
+      } finally {
+        setIsConverting(false);
       }
     }
   };
 
-  // Seleziona bevanda e invia
+  // ✅ AGGIORNATO: Seleziona bevanda e invia con immagine
   const handleDrinkSelect = async (drink) => {
-    console.log('Bevanda selezionata:', drink.id, drink.name);
+    console.log('🍺 [1] Bevanda selezionata:', {
+      id: drink.id,
+      name: drink.name,
+      brand: drink.brand,
+    });
     
     if (!drink.id) {
+      console.log('❌ [2] Errore: drink.id mancante!');
       Alert.alert('Errore', 'Bevanda non valida');
       return;
     }
@@ -343,39 +394,77 @@ const BeviScreen = () => {
     setDrinkSelectorVisible(false);
     
     try {
-      const result = await createDrinkLog({
+      // Prepara i dati per la richiesta
+      const drinkLogData = {
         drinkId: drink.id,
-        photoUrl: photo?.uri || 'https://placeholder.com/drink.jpg',
-      }).unwrap();
+      };
+      
+      console.log('🍺 [2] photoBase64 presente?', !!photoBase64);
+      
+      // ✅ IMPORTANTE: Se abbiamo una foto, inviala come base64
+      if (photoBase64) {
+        drinkLogData.image = photoBase64;
+        console.log('🍺 [3] Aggiungo immagine alla richiesta:', {
+          lunghezzaBase64: photoBase64.length,
+          dimensioneStimata: formatFileSize(estimateBase64Size(photoBase64)),
+        });
+      } else {
+        console.log('⚠️ [3] Nessuna foto, invio senza immagine');
+      }
+      
+      console.log('📤 [4] Invio richiesta createDrinkLog...', {
+        drinkId: drinkLogData.drinkId,
+        hasImage: !!drinkLogData.image,
+      });
+      
+      const result = await createDrinkLog(drinkLogData).unwrap();
+      
+      console.log('✅ [5] Risposta ricevuta:', JSON.stringify(result, null, 2));
       
       const data = result?.data || result;
+      
+      console.log('✅ [6] Dati estratti:', {
+        drinkLogId: data?.drinkLog?.id,
+        pointsEarned: data?.drinkLog?.pointsEarned,
+        photoUrl: data?.drinkLog?.photoUrl,
+      });
       
       Alert.alert(
         '🎉 Bevuta registrata!', 
         `Hai registrato: ${drink.name}\n+${data?.drinkLog?.pointsEarned || drink.basePoints} punti!`,
         [{ text: 'OK', onPress: () => {
           setPhoto(null);
+          setPhotoBase64(null);
           refetchCooldown();
         }}]
       );
     } catch (error) {
-      console.log('Errore registrazione:', error);
+      console.log('❌ [ERROR] Errore registrazione:', {
+        message: error?.message,
+        status: error?.status,
+        data: error?.data,
+        fullError: JSON.stringify(error, null, 2),
+      });
       Alert.alert(
         'Errore', 
         error?.data?.message || 'Impossibile registrare la bevuta'
       );
       setPhoto(null);
+      setPhotoBase64(null);
     }
   };
 
   // Reset
   const handleReset = () => {
     setPhoto(null);
+    setPhotoBase64(null);
     setCameraOpen(false);
   };
 
-  // Apri direttamente il selettore
+  // Apri direttamente il selettore (senza foto)
   const handleQuickAdd = () => {
+    setPhoto(null);
+    setPhotoBase64(null);
     setDrinkSelectorVisible(true);
   };
 
@@ -435,10 +524,15 @@ const BeviScreen = () => {
 
             <View style={styles.cameraFooter}>
               <TouchableOpacity 
-                style={styles.captureButton}
+                style={[styles.captureButton, isConverting && styles.captureButtonDisabled]}
                 onPress={takePicture}
+                disabled={isConverting}
               >
-                <View style={styles.captureButtonInner} />
+                {isConverting ? (
+                  <ActivityIndicator size="large" color={colors.primary} />
+                ) : (
+                  <View style={styles.captureButtonInner} />
+                )}
               </TouchableOpacity>
             </View>
           </SafeAreaView>
@@ -458,6 +552,17 @@ const BeviScreen = () => {
         {photo ? (
           <View style={styles.photoPreview}>
             <Image source={{ uri: photo.uri }} style={styles.photoImage} />
+            
+            {/* ✅ NUOVO: Mostra dimensione immagine */}
+            {photoBase64 && (
+              <View style={styles.imageSizeInfo}>
+                <Ionicons name="cloud-upload-outline" size={14} color={colors.success} />
+                <Text style={styles.imageSizeText}>
+                  Pronta per upload ({formatFileSize(estimateBase64Size(photoBase64))})
+                </Text>
+              </View>
+            )}
+            
             <TouchableOpacity style={styles.retakeButton} onPress={handleReset}>
               <Ionicons name="refresh" size={20} color={colors.white} />
               <Text style={styles.retakeText}>Scatta di nuovo</Text>
@@ -524,6 +629,7 @@ const BeviScreen = () => {
         onClose={() => {
           setDrinkSelectorVisible(false);
           setPhoto(null);
+          setPhotoBase64(null);
         }}
         onSelect={handleDrinkSelect}
         drinks={drinks}
@@ -531,10 +637,14 @@ const BeviScreen = () => {
         isLoading={drinksLoading}
       />
 
-      {isSubmitting && (
+      {/* ✅ AGGIORNATO: Loading overlay con messaggio upload */}
+      {(isSubmitting || isConverting) && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color={colors.white} />
-          <Text style={styles.loadingText}>Registrazione in corso...</Text>
+          <Text style={styles.loadingText}>
+            {isConverting ? 'Elaborazione foto...' : 
+             photoBase64 ? 'Upload e registrazione...' : 'Registrazione in corso...'}
+          </Text>
         </View>
       )}
     </SafeAreaView>
@@ -684,6 +794,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  captureButtonDisabled: {
+    opacity: 0.7,
+  },
   captureButtonInner: {
     width: 64,
     height: 64,
@@ -699,7 +812,22 @@ const styles = StyleSheet.create({
     width: 250,
     height: 250,
     borderRadius: borderRadius.lg,
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  // ✅ NUOVO: Info dimensione immagine
+  imageSizeInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.success + '15',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.sm,
+    marginBottom: spacing.sm,
+  },
+  imageSizeText: {
+    ...typography.caption,
+    color: colors.success,
+    marginLeft: spacing.xs,
   },
   retakeButton: {
     flexDirection: 'row',
