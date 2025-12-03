@@ -1,9 +1,8 @@
 // src/screens/GroupsScreen/components/GroupChat.js
-// ✅ VERSIONE CORRETTA - Fix race condition RTK Query vs WebSocket
-// ✅ AGGIORNATO: Mostra immagine bevuta nei messaggi DRINK_LOG
-// 🔍 DEBUG: Log per verificare dati DRINK_LOG
+// ✅ VERSIONE 3.0 - UI pulita con hook separato
+// Solo UI, keyboard handling, scroll handling
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -16,223 +15,98 @@ import {
   Alert,
   ActionSheetIOS,
   Keyboard,
-  Image,
+  Animated,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors, typography, spacing, borderRadius } from '../../../theme';
-import {
-  useGetGroupMessagesQuery,
-  useSendGroupMessageMutation,
-  useDeleteGroupMessageMutation,
-  useMarkMessagesAsReadMutation,
-} from '../../../api/beviApi';
-import { useGroupChat } from '../../../hooks/useSocket';
+
+// Hook e componenti
+import { useGroupMessages } from '../../../hooks/useGroupMessages';
+import ChatMessage from './ChatMessage';
+
+// ==================== SUB-COMPONENTS ====================
+
+const DateSeparator = ({ date }) => (
+  <View style={styles.dateSeparator}>
+    <Text style={styles.dateText}>{date}</Text>
+  </View>
+);
+
+const ScrollToBottomButton = ({ visible, onPress, unreadCount }) => {
+  const opacity = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(opacity, {
+      toValue: visible ? 1 : 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+  }, [visible, opacity]);
+
+  if (!visible) return null;
+
+  return (
+    <Animated.View style={[styles.scrollToBottomContainer, { opacity }]}>
+      <TouchableOpacity style={styles.scrollToBottomButton} onPress={onPress} activeOpacity={0.8}>
+        {unreadCount > 0 && (
+          <View style={styles.unreadBadge}>
+            <Text style={styles.unreadBadgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>
+          </View>
+        )}
+        <Ionicons name="chevron-down" size={24} color={colors.primary} />
+      </TouchableOpacity>
+    </Animated.View>
+  );
+};
+
+const TypingIndicator = ({ users, bottomOffset }) => {
+  if (users.length === 0) return null;
+
+  return (
+    <View style={[styles.typingContainer, { bottom: bottomOffset }]}>
+      <Text style={styles.typingText}>
+        {users.length === 1
+          ? `${users[0].username} sta scrivendo...`
+          : `${users.length} persone stanno scrivendo...`}
+      </Text>
+    </View>
+  );
+};
+
+// ==================== MAIN COMPONENT ====================
 
 const GroupChat = ({ groupId, currentUserId }) => {
-  // ============ STATE ============
+  // ============ HOOK MESSAGGI ============
+  const {
+    messages,
+    typingUsers,
+    isLoading,
+    isSending,
+    isConnected,
+    sendMessage,
+    deleteMessage,
+    sendTyping,
+    reconnect,
+    normalizeId,
+  } = useGroupMessages(groupId, currentUserId);
+
+  // ============ LOCAL STATE (solo UI) ============
   const [messageText, setMessageText] = useState('');
   const [keyboardOffset, setKeyboardOffset] = useState(0);
-  const [localMessages, setLocalMessages] = useState([]);
-  const [typingUsers, setTypingUsers] = useState([]);
-  const [initialLoadDone, setInitialLoadDone] = useState(false);
-  
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const [unreadInView, setUnreadInView] = useState(0);
+
   // ============ REFS ============
   const flatListRef = useRef(null);
   const insets = useSafeAreaInsets();
-  const hasMarkedAsRead = useRef(false);
   const typingTimeoutRef = useRef(null);
-  const previousGroupId = useRef(null);
+  const isNearBottom = useRef(true);
+  const prevMessagesLength = useRef(0);
 
-  // ============ DEBUG ============
-  console.log('🔷 GroupChat RENDER | groupId:', groupId, '| messages:', localMessages.length);
+  // ============ EFFECTS ============
 
-  // ==================== NORMALIZZAZIONE ID ====================
-  const normalizeId = useCallback((id) => {
-    if (id === null || id === undefined) return '';
-    return String(id);
-  }, []);
-
-  const myUserId = normalizeId(currentUserId);
-
-  // ==================== API QUERY ====================
-  const {
-    data: messagesData,
-    isLoading,
-    isFetching,
-    isSuccess,
-    isError,
-    error,
-  } = useGetGroupMessagesQuery(groupId, {
-    skip: !groupId,
-    refetchOnMountOrArgChange: false,
-    refetchOnFocus: false,
-    refetchOnReconnect: false,
-  });
-
-  const [sendMessage, { isLoading: isSending }] = useSendGroupMessageMutation();
-  const [deleteMessage] = useDeleteGroupMessageMutation();
-  const [markAsRead] = useMarkMessagesAsReadMutation();
-
-  // ==================== PROCESSA MESSAGGI ====================
-  const processMessages = useCallback((messages) => {
-    if (!messages || !Array.isArray(messages)) return [];
-
-    return messages.map(msg => {
-      const senderId = normalizeId(msg.sender?.id || msg.senderId);
-      const isMe = senderId === myUserId;
-      return { ...msg, isMe };
-    });
-  }, [myUserId, normalizeId]);
-
-  // ==================== WEBSOCKET CALLBACKS ====================
-
-  const handleNewMessage = useCallback((message) => {
-    console.log('📩 WS: nuovo messaggio', message.id);
-
-    setLocalMessages(prev => {
-      const messageId = normalizeId(message.id);
-      
-      const exists = prev.some(m => normalizeId(m.id) === messageId);
-      if (exists) {
-        console.log('   - Duplicato, ignoro');
-        return prev;
-      }
-
-      const senderId = normalizeId(message.sender?.id || message.senderId);
-      const isMe = senderId === myUserId;
-
-      console.log('   - Aggiunto, isMe:', isMe);
-      
-      const updated = [...prev, { ...message, isMe }];
-      updated.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-      
-      return updated;
-    });
-
-    setTimeout(() => {
-      flatListRef.current?.scrollToEnd({ animated: true });
-    }, 100);
-  }, [myUserId, normalizeId]);
-
-  const handleMessageDeleted = useCallback((data) => {
-    const messageId = normalizeId(typeof data === 'string' ? data : data.messageId);
-    console.log('🗑️ WS: messaggio eliminato:', messageId);
-
-    setLocalMessages(prev =>
-      prev.map(m =>
-        normalizeId(m.id) === messageId
-          ? { ...m, isDeleted: true, content: 'Messaggio eliminato' }
-          : m
-      )
-    );
-  }, [normalizeId]);
-
-  const handleUserTyping = useCallback((data) => {
-    const typingUserId = normalizeId(data.userId);
-    if (typingUserId === myUserId) return;
-
-    setTypingUsers(prev => {
-      if (data.isTyping) {
-        const exists = prev.some(u => normalizeId(u.userId) === typingUserId);
-        if (!exists) {
-          return [...prev, { userId: data.userId, username: data.username }];
-        }
-        return prev;
-      } else {
-        return prev.filter(u => normalizeId(u.userId) !== typingUserId);
-      }
-    });
-
-    setTimeout(() => {
-      setTypingUsers(prev => prev.filter(u => normalizeId(u.userId) !== typingUserId));
-    }, 3000);
-  }, [myUserId, normalizeId]);
-
-  // ==================== WEBSOCKET HOOK ====================
-  const { sendTyping, isConnected, isJoined, reconnect, getStatus } = useGroupChat(
-    groupId,
-    handleNewMessage,
-    handleMessageDeleted,
-    handleUserTyping
-  );
-
-  // ==================== EFFETTI ====================
-
-  useEffect(() => {
-    if (previousGroupId.current !== groupId) {
-      console.log('🔄 Cambio gruppo:', previousGroupId.current, '->', groupId);
-      setLocalMessages([]);
-      setTypingUsers([]);
-      setInitialLoadDone(false);
-      hasMarkedAsRead.current = false;
-      previousGroupId.current = groupId;
-    }
-  }, [groupId]);
-
-  useEffect(() => {
-    if (initialLoadDone) {
-      console.log('⏭️ Skip: caricamento iniziale già fatto');
-      return;
-    }
-
-    if (isLoading) {
-      console.log('⏳ Skip: ancora in loading');
-      return;
-    }
-
-    if (isFetching && localMessages.length > 0) {
-      console.log('⏭️ Skip: isFetching ma ho già messaggi locali');
-      return;
-    }
-
-    if (!messagesData) {
-      console.log('⏭️ Skip: messagesData è null');
-      return;
-    }
-
-    console.log('⭐ Caricamento iniziale messaggi...');
-
-    let serverMessages = null;
-    if (messagesData?.data?.messages && Array.isArray(messagesData.data.messages)) {
-      serverMessages = messagesData.data.messages;
-    } else if (messagesData?.data && Array.isArray(messagesData.data)) {
-      serverMessages = messagesData.data;
-    } else if (messagesData?.messages && Array.isArray(messagesData.messages)) {
-      serverMessages = messagesData.messages;
-    } else if (Array.isArray(messagesData)) {
-      serverMessages = messagesData;
-    }
-
-    if (!serverMessages) {
-      console.log('❌ Formato messagesData non riconosciuto');
-      return;
-    }
-
-    console.log('   📬 Messaggi dal server:', serverMessages.length);
-
-    const processed = processMessages(serverMessages);
-    
-    setLocalMessages(processed);
-    setInitialLoadDone(true);
-
-    console.log('   ✅ Caricamento iniziale completato:', processed.length, 'messaggi');
-
-    if (processed.length > 0) {
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: false });
-      }, 200);
-    }
-  }, [messagesData, isLoading, isFetching, initialLoadDone, processMessages, localMessages.length]);
-
-  useEffect(() => {
-    if (localMessages.length > 0 && !hasMarkedAsRead.current && groupId) {
-      hasMarkedAsRead.current = true;
-      console.log('📖 Segno messaggi come letti');
-      markAsRead(groupId).catch(err => console.log('Errore mark as read:', err));
-    }
-  }, [groupId, localMessages.length, markAsRead]);
-
+  // Keyboard listener
   useEffect(() => {
     const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
@@ -256,13 +130,40 @@ const GroupChat = ({ groupId, currentUserId }) => {
     };
   }, [insets.bottom]);
 
+  // Auto-scroll quando arrivano nuovi messaggi
+  useEffect(() => {
+    if (messages.length > prevMessagesLength.current) {
+      const newMessagesCount = messages.length - prevMessagesLength.current;
+      
+      if (isNearBottom.current) {
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+      } else {
+        // Incrementa unread solo per messaggi degli altri
+        const lastMessages = messages.slice(-newMessagesCount);
+        const othersMessages = lastMessages.filter(m => !m.isMe);
+        if (othersMessages.length > 0) {
+          setUnreadInView(count => count + othersMessages.length);
+        }
+      }
+    }
+    prevMessagesLength.current = messages.length;
+  }, [messages.length]);
+
+  // Scroll iniziale
+  useEffect(() => {
+    if (messages.length > 0 && prevMessagesLength.current === 0) {
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 200);
+    }
+  }, [messages.length]);
+
+  // Cleanup typing timeout
   useEffect(() => {
     return () => {
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
     };
   }, []);
 
-  // ==================== HANDLERS ====================
+  // ============ HANDLERS ============
 
   const dismissKeyboard = () => Keyboard.dismiss();
 
@@ -285,13 +186,13 @@ const GroupChat = ({ groupId, currentUserId }) => {
     sendTyping(false);
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
 
-    try {
-      console.log('📤 Invio messaggio:', text);
-      await sendMessage({ groupId, message: text }).unwrap();
-    } catch (error) {
-      console.log('❌ Errore invio:', error);
+    const result = await sendMessage(text);
+    
+    if (!result.success) {
       setMessageText(text);
       Alert.alert('Errore', 'Impossibile inviare il messaggio');
+    } else {
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     }
   };
 
@@ -302,9 +203,8 @@ const GroupChat = ({ groupId, currentUserId }) => {
         text: 'Elimina',
         style: 'destructive',
         onPress: async () => {
-          try {
-            await deleteMessage(messageId).unwrap();
-          } catch (error) {
+          const result = await deleteMessage(messageId);
+          if (!result.success) {
             Alert.alert('Errore', 'Impossibile eliminare');
           }
         },
@@ -312,7 +212,7 @@ const GroupChat = ({ groupId, currentUserId }) => {
     ]);
   };
 
-  const showMessageOptions = (message) => {
+  const showMessageOptions = useCallback((message) => {
     const isMine = message.isMe === true;
     if (message.isDeleted || ['SYSTEM', 'DRINK_LOG', 'LEADERBOARD', 'WHEEL_RESULT'].includes(message.type)) return;
 
@@ -336,16 +236,30 @@ const GroupChat = ({ groupId, currentUserId }) => {
       if (isMine) buttons.push({ text: 'Elimina', style: 'destructive', onPress: () => handleDelete(message.id) });
       Alert.alert('Opzioni', null, buttons);
     }
+  }, []);
+
+  const handleScroll = (event) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    const distanceFromBottom = contentSize.height - contentOffset.y - layoutMeasurement.height;
+
+    const wasNearBottom = isNearBottom.current;
+    isNearBottom.current = distanceFromBottom < 100;
+
+    setShowScrollButton(distanceFromBottom > 300);
+
+    if (!wasNearBottom && isNearBottom.current) {
+      setUnreadInView(0);
+    }
   };
 
-  // ==================== FORMATTERS ====================
-
-  const formatTime = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' });
+  const scrollToBottom = () => {
+    flatListRef.current?.scrollToEnd({ animated: true });
+    setUnreadInView(0);
   };
 
-  const formatDate = (dateString) => {
+  // ============ FORMATTERS ============
+
+  const formatDate = useCallback((dateString) => {
     const date = new Date(dateString);
     const today = new Date();
     const yesterday = new Date(today);
@@ -354,140 +268,73 @@ const GroupChat = ({ groupId, currentUserId }) => {
     if (date.toDateString() === today.toDateString()) return 'Oggi';
     if (date.toDateString() === yesterday.toDateString()) return 'Ieri';
     return date.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
-  };
+  }, []);
 
-  const groupMessagesByDate = useCallback(() => {
+  // ============ GROUPED MESSAGES ============
+
+  const groupedMessages = useMemo(() => {
     const grouped = [];
     let currentDate = null;
 
-    localMessages.forEach((msg) => {
+    messages.forEach((msg, index) => {
       const msgDate = formatDate(msg.createdAt);
+      
       if (msgDate !== currentDate) {
         grouped.push({ type: 'date', date: msgDate, id: `date-${msg.id}` });
         currentDate = msgDate;
       }
-      grouped.push({ type: 'message', ...msg });
+
+      const prevMsg = messages[index - 1];
+      const nextMsg = messages[index + 1];
+      
+      const isSpecialType = ['SYSTEM', 'DRINK_LOG', 'LEADERBOARD', 'WHEEL_RESULT'].includes(msg.type);
+      
+      const prevSameSender = prevMsg && 
+        normalizeId(prevMsg.sender?.id || prevMsg.senderId) === normalizeId(msg.sender?.id || msg.senderId) &&
+        formatDate(prevMsg.createdAt) === msgDate &&
+        !['SYSTEM', 'DRINK_LOG', 'LEADERBOARD', 'WHEEL_RESULT'].includes(prevMsg.type) &&
+        !isSpecialType;
+      
+      const nextSameSender = nextMsg &&
+        normalizeId(nextMsg.sender?.id || nextMsg.senderId) === normalizeId(msg.sender?.id || msg.senderId) &&
+        formatDate(nextMsg.createdAt) === msgDate &&
+        !['SYSTEM', 'DRINK_LOG', 'LEADERBOARD', 'WHEEL_RESULT'].includes(nextMsg.type) &&
+        !isSpecialType;
+
+      grouped.push({
+        type: 'message',
+        ...msg,
+        isFirstInGroup: !prevSameSender,
+        isLastInGroup: !nextSameSender,
+      });
     });
 
     return grouped;
-  }, [localMessages]);
+  }, [messages, normalizeId, formatDate]);
 
-  const groupedMessages = groupMessagesByDate();
+  // ============ RENDER ============
 
-  // ==================== RENDER ITEM ====================
-
-  const renderItem = ({ item }) => {
-    // Separatore data
+  const renderItem = useCallback(({ item }) => {
     if (item.type === 'date') {
-      return (
-        <View style={styles.dateSeparator}>
-          <Text style={styles.dateText}>{item.date}</Text>
-        </View>
-      );
+      return <DateSeparator date={item.date} />;
     }
-
-    // Messaggio di sistema
-    if (item.type === 'SYSTEM' || item.type === 'LEADERBOARD') {
-      return (
-        <View style={styles.systemMessageContainer}>
-          <View style={styles.systemMessageBubble}>
-            <Text style={styles.systemMessageText}>{item.content || item.message}</Text>
-          </View>
-        </View>
-      );
-    }
-
-    // ✅ AGGIORNATO: Messaggio drink log con immagine
-    if (item.type === 'DRINK_LOG') {
-      // 🔍 DEBUG - Vediamo cosa arriva
-      console.log('🍺 DRINK_LOG DEBUG:', JSON.stringify({
-        id: item.id,
-        imageUrl: item.imageUrl,
-        drinkLog: item.drinkLog,
-        content: item.content?.substring(0, 50),
-      }, null, 2));
-      
-      // Estrai URL immagine da vari possibili campi
-      const drinkPhotoUrl = item.imageUrl || item.drinkLog?.photoUrl || item.metadata?.photoUrl;
-      
-      console.log('🖼️ drinkPhotoUrl finale:', drinkPhotoUrl);
-      
-      // Solo URL Cloudinary sono validi (i file:// locali non funzionano)
-      const isValidCloudinaryUrl = drinkPhotoUrl && drinkPhotoUrl.startsWith('https://res.cloudinary.com');
-      
-      return (
-        <View style={styles.drinkLogContainer}>
-          <View style={styles.drinkLogBubble}>
-            {/* ✅ Immagine della bevuta (solo se URL Cloudinary valido) */}
-            {isValidCloudinaryUrl && (
-              <Image 
-                source={{ uri: drinkPhotoUrl }} 
-                style={styles.drinkLogImage}
-                resizeMode="cover"
-                onLoad={() => console.log('✅ Immagine caricata:', drinkPhotoUrl.substring(0, 50))}
-                onError={(e) => console.log('❌ Errore caricamento immagine:', e.nativeEvent.error)}
-              />
-            )}
-            <Text style={styles.drinkLogText}>{item.content || item.message}</Text>
-          </View>
-        </View>
-      );
-    }
-
-    // Messaggio wheel result
-    if (item.type === 'WHEEL_RESULT') {
-      return (
-        <View style={styles.wheelResultContainer}>
-          <View style={styles.wheelResultBubble}>
-            <Text style={styles.wheelResultIcon}>🎡</Text>
-            <Text style={styles.wheelResultText}>{item.content || item.message}</Text>
-          </View>
-        </View>
-      );
-    }
-
-    // Messaggio normale
-    const isMe = item.isMe === true;
 
     return (
-      <TouchableOpacity
-        style={[styles.messageContainer, isMe && styles.messageContainerMe]}
+      <ChatMessage
+        message={item}
+        isMe={item.isMe}
+        isFirstInGroup={item.isFirstInGroup}
+        isLastInGroup={item.isLastInGroup}
+        onLongPress={showMessageOptions}
         onPress={dismissKeyboard}
-        onLongPress={() => showMessageOptions(item)}
-        delayLongPress={400}
-        activeOpacity={0.7}
-      >
-        <View style={[
-          styles.messageBubble,
-          isMe ? styles.messageBubbleMe : styles.messageBubbleOther,
-          item.isDeleted && styles.messageBubbleDeleted
-        ]}>
-          {/* Nome mittente (solo per messaggi degli altri) */}
-          {!isMe && !item.isDeleted && (
-            <Text style={styles.senderName}>
-              {item.sender?.nickname || item.sender?.username || 'Utente'}
-            </Text>
-          )}
-          
-          {/* Testo messaggio */}
-          <Text style={[styles.messageText, item.isDeleted && styles.messageTextDeleted]}>
-            {item.isDeleted ? '🚫 Messaggio eliminato' : (item.content || item.message)}
-          </Text>
-          
-          {/* Orario */}
-          {!item.isDeleted && (
-            <Text style={[styles.messageTime, isMe && styles.messageTimeMe]}>
-              {formatTime(item.createdAt)}
-            </Text>
-          )}
-        </View>
-      </TouchableOpacity>
+      />
     );
-  };
+  }, [showMessageOptions]);
 
-  // ==================== RENDER PRINCIPALE ====================
+  const keyExtractor = useCallback((item) => item.id?.toString() || `temp-${Math.random()}`, []);
 
-  if (isLoading && localMessages.length === 0) {
+  // Loading state
+  if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.primary} />
@@ -510,13 +357,15 @@ const GroupChat = ({ groupId, currentUserId }) => {
       <FlatList
         ref={flatListRef}
         data={groupedMessages}
-        keyExtractor={(item) => item.id?.toString() || `temp-${Math.random()}`}
+        keyExtractor={keyExtractor}
         renderItem={renderItem}
         contentContainerStyle={[
           styles.messagesList,
           { paddingBottom: keyboardOffset > 0 ? keyboardOffset + 60 : 70 }
         ]}
         showsVerticalScrollIndicator={false}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         ListEmptyComponent={
@@ -528,18 +377,20 @@ const GroupChat = ({ groupId, currentUserId }) => {
         }
       />
 
-      {/* Indicatore typing */}
-      {typingUsers.length > 0 && (
-        <View style={styles.typingContainer}>
-          <Text style={styles.typingText}>
-            {typingUsers.length === 1
-              ? `${typingUsers[0].username} sta scrivendo...`
-              : `${typingUsers.length} persone stanno scrivendo...`}
-          </Text>
-        </View>
-      )}
+      {/* Typing indicator */}
+      <TypingIndicator 
+        users={typingUsers} 
+        bottomOffset={keyboardOffset > 0 ? keyboardOffset + 60 : 60} 
+      />
 
-      {/* Input messaggio */}
+      {/* Scroll to bottom */}
+      <ScrollToBottomButton
+        visible={showScrollButton}
+        onPress={scrollToBottom}
+        unreadCount={unreadInView}
+      />
+
+      {/* Input */}
       <View style={[styles.inputContainer, { transform: [{ translateY: -keyboardOffset }] }]}>
         <TextInput
           style={styles.input}
@@ -567,6 +418,7 @@ const GroupChat = ({ groupId, currentUserId }) => {
 };
 
 // ==================== STYLES ====================
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -601,7 +453,6 @@ const styles = StyleSheet.create({
   },
   typingContainer: {
     position: 'absolute',
-    bottom: 60,
     left: spacing.md,
     right: spacing.md,
     backgroundColor: colors.white,
@@ -627,124 +478,40 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.round,
     fontSize: 11,
   },
-  systemMessageContainer: {
-    alignItems: 'center',
-    marginVertical: spacing.sm,
+  scrollToBottomContainer: {
+    position: 'absolute',
+    right: spacing.md,
+    bottom: 80,
   },
-  systemMessageBubble: {
-    backgroundColor: colors.veryLightGray,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.lg,
-    maxWidth: '85%',
-  },
-  systemMessageText: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    fontStyle: 'italic',
-  },
-  // ✅ AGGIORNATO: Stili drink log con immagine
-  drinkLogContainer: {
-    alignItems: 'center',
-    marginVertical: spacing.sm,
-  },
-  drinkLogBubble: {
-    backgroundColor: colors.bevi + '15',
-    borderWidth: 1,
-    borderColor: colors.bevi + '30',
-    borderRadius: borderRadius.lg,
-    width: 280, // Larghezza fissa invece di maxWidth
-    overflow: 'hidden',
-  },
-  // ✅ NUOVO: Stile immagine bevuta con dimensioni fisse
-  drinkLogImage: {
-    width: 280,
-    height: 200,
-    backgroundColor: colors.veryLightGray,
-  },
-  drinkLogText: {
-    ...typography.body,
-    color: colors.textPrimary,
-    fontSize: 14,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  wheelResultContainer: {
-    alignItems: 'center',
-    marginVertical: spacing.sm,
-  },
-  wheelResultBubble: {
-    backgroundColor: colors.primary + '15',
-    borderWidth: 1,
-    borderColor: colors.primary + '30',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.lg,
-    maxWidth: '85%',
-    alignItems: 'center',
-  },
-  wheelResultIcon: {
-    fontSize: 32,
-    marginBottom: spacing.xs,
-  },
-  wheelResultText: {
-    ...typography.body,
-    color: colors.textPrimary,
-    textAlign: 'center',
-    fontSize: 14,
-  },
-  messageContainer: {
-    marginBottom: spacing.xs,
-    alignItems: 'flex-start',
-  },
-  messageContainerMe: {
-    alignItems: 'flex-end',
-  },
-  messageBubble: {
-    maxWidth: '75%',
-    paddingHorizontal: spacing.sm + 2,
-    paddingVertical: spacing.xs + 2,
-    borderRadius: 18,
-  },
-  messageBubbleOther: {
+  scrollToBottomButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: colors.white,
-    borderBottomLeftRadius: 4,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
   },
-  messageBubbleMe: {
-    backgroundColor: '#E5E5EA',
-    borderBottomRightRadius: 4,
+  unreadBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: colors.primary,
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
   },
-  messageBubbleDeleted: {
-    backgroundColor: colors.veryLightGray,
-  },
-  senderName: {
-    ...typography.caption,
-    fontWeight: '600',
-    color: colors.primary,
-    marginBottom: 1,
-    fontSize: 12,
-  },
-  messageText: {
-    ...typography.body,
-    color: colors.textPrimary,
-    fontSize: 15,
-    lineHeight: 20,
-  },
-  messageTextDeleted: {
-    color: colors.textTertiary,
-    fontStyle: 'italic',
-    fontSize: 13,
-  },
-  messageTime: {
-    ...typography.caption,
-    color: colors.textTertiary,
-    marginTop: 2,
-    alignSelf: 'flex-end',
+  unreadBadgeText: {
+    color: colors.white,
     fontSize: 10,
-  },
-  messageTimeMe: {
-    color: colors.gray,
+    fontWeight: '700',
   },
   emptyContainer: {
     flex: 1,
