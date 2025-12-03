@@ -1,6 +1,5 @@
 // src/screens/GroupsScreen/components/GroupChat.js
-// ✅ VERSIONE 3.0 - UI pulita con hook separato
-// Solo UI, keyboard handling, scroll handling
+// ✅ VERSIONE 4.1 - Fix keyboard iOS manuale + Android automatico
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
@@ -60,11 +59,11 @@ const ScrollToBottomButton = ({ visible, onPress, unreadCount }) => {
   );
 };
 
-const TypingIndicator = ({ users, bottomOffset }) => {
+const TypingIndicator = ({ users }) => {
   if (users.length === 0) return null;
 
   return (
-    <View style={[styles.typingContainer, { bottom: bottomOffset }]}>
+    <View style={styles.typingContainer}>
       <Text style={styles.typingText}>
         {users.length === 1
           ? `${users[0].username} sta scrivendo...`
@@ -93,12 +92,15 @@ const GroupChat = ({ groupId, currentUserId }) => {
 
   // ============ LOCAL STATE (solo UI) ============
   const [messageText, setMessageText] = useState('');
-  const [keyboardOffset, setKeyboardOffset] = useState(0);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [unreadInView, setUnreadInView] = useState(0);
+  
+  // ✅ Keyboard height solo per iOS
+  const [iosKeyboardHeight, setIosKeyboardHeight] = useState(0);
 
   // ============ REFS ============
   const flatListRef = useRef(null);
+  const inputRef = useRef(null);
   const insets = useSafeAreaInsets();
   const typingTimeoutRef = useRef(null);
   const isNearBottom = useRef(true);
@@ -106,23 +108,30 @@ const GroupChat = ({ groupId, currentUserId }) => {
 
   // ============ EFFECTS ============
 
-  // Keyboard listener
+  // ✅ Keyboard listener SOLO per iOS
   useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    if (Platform.OS !== 'ios') return;
 
-    const onKeyboardShow = (e) => {
+    const onKeyboardWillShow = (e) => {
       const keyboardHeight = e.endCoordinates.height;
-      const bottomInset = insets.bottom || 0;
-      const offset = Platform.OS === 'ios' ? keyboardHeight - bottomInset : keyboardHeight;
-      setKeyboardOffset(offset);
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+      // Sottrai il safe area bottom perché è già considerato
+      const offset = keyboardHeight - (insets.bottom || 0);
+      setIosKeyboardHeight(offset);
+      
+      // Scroll to bottom quando appare la tastiera
+      setTimeout(() => {
+        if (isNearBottom.current) {
+          flatListRef.current?.scrollToEnd({ animated: true });
+        }
+      }, 100);
     };
 
-    const onKeyboardHide = () => setKeyboardOffset(0);
+    const onKeyboardWillHide = () => {
+      setIosKeyboardHeight(0);
+    };
 
-    const showSub = Keyboard.addListener(showEvent, onKeyboardShow);
-    const hideSub = Keyboard.addListener(hideEvent, onKeyboardHide);
+    const showSub = Keyboard.addListener('keyboardWillShow', onKeyboardWillShow);
+    const hideSub = Keyboard.addListener('keyboardWillHide', onKeyboardWillHide);
 
     return () => {
       showSub.remove();
@@ -138,7 +147,6 @@ const GroupChat = ({ groupId, currentUserId }) => {
       if (isNearBottom.current) {
         setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
       } else {
-        // Incrementa unread solo per messaggi degli altri
         const lastMessages = messages.slice(-newMessagesCount);
         const othersMessages = lastMessages.filter(m => !m.isMe);
         if (othersMessages.length > 0) {
@@ -165,9 +173,11 @@ const GroupChat = ({ groupId, currentUserId }) => {
 
   // ============ HANDLERS ============
 
-  const dismissKeyboard = () => Keyboard.dismiss();
+  const dismissKeyboard = useCallback(() => {
+    Keyboard.dismiss();
+  }, []);
 
-  const handleTextChange = (text) => {
+  const handleTextChange = useCallback((text) => {
     setMessageText(text);
     if (text.length > 0) {
       sendTyping(true);
@@ -176,27 +186,36 @@ const GroupChat = ({ groupId, currentUserId }) => {
     } else {
       sendTyping(false);
     }
-  };
+  }, [sendTyping]);
 
-  const handleSend = async () => {
-    if (!messageText.trim() || isSending) return;
-
+  const handleSend = useCallback(async () => {
     const text = messageText.trim();
-    setMessageText('');
+    if (!text || isSending) return;
+
+    // Salva il testo prima di tutto
+    const textToSend = text;
+    
+    // Stop typing
     sendTyping(false);
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
 
-    const result = await sendMessage(text);
+    // Chiudi tastiera
+    Keyboard.dismiss();
+    
+    // Pulisci input
+    setMessageText('');
+
+    const result = await sendMessage(textToSend);
     
     if (!result.success) {
-      setMessageText(text);
+      setMessageText(textToSend);
       Alert.alert('Errore', 'Impossibile inviare il messaggio');
     } else {
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 150);
     }
-  };
+  }, [messageText, isSending, sendMessage, sendTyping]);
 
-  const handleDelete = async (messageId) => {
+  const handleDelete = useCallback(async (messageId) => {
     Alert.alert('Elimina messaggio', 'Sei sicuro?', [
       { text: 'Annulla', style: 'cancel' },
       {
@@ -210,11 +229,13 @@ const GroupChat = ({ groupId, currentUserId }) => {
         },
       },
     ]);
-  };
+  }, [deleteMessage]);
 
   const showMessageOptions = useCallback((message) => {
     const isMine = message.isMe === true;
     if (message.isDeleted || ['SYSTEM', 'DRINK_LOG', 'LEADERBOARD', 'WHEEL_RESULT'].includes(message.type)) return;
+
+    Keyboard.dismiss();
 
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
@@ -236,9 +257,9 @@ const GroupChat = ({ groupId, currentUserId }) => {
       if (isMine) buttons.push({ text: 'Elimina', style: 'destructive', onPress: () => handleDelete(message.id) });
       Alert.alert('Opzioni', null, buttons);
     }
-  }, []);
+  }, [handleDelete]);
 
-  const handleScroll = (event) => {
+  const handleScroll = useCallback((event) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     const distanceFromBottom = contentSize.height - contentOffset.y - layoutMeasurement.height;
 
@@ -250,12 +271,12 @@ const GroupChat = ({ groupId, currentUserId }) => {
     if (!wasNearBottom && isNearBottom.current) {
       setUnreadInView(0);
     }
-  };
+  }, []);
 
-  const scrollToBottom = () => {
+  const scrollToBottom = useCallback(() => {
     flatListRef.current?.scrollToEnd({ animated: true });
     setUnreadInView(0);
-  };
+  }, []);
 
   // ============ FORMATTERS ============
 
@@ -329,7 +350,7 @@ const GroupChat = ({ groupId, currentUserId }) => {
         onPress={dismissKeyboard}
       />
     );
-  }, [showMessageOptions]);
+  }, [showMessageOptions, dismissKeyboard]);
 
   const keyExtractor = useCallback((item) => item.id?.toString() || `temp-${Math.random()}`, []);
 
@@ -342,6 +363,25 @@ const GroupChat = ({ groupId, currentUserId }) => {
       </View>
     );
   }
+
+  // ============ CALCOLI LAYOUT ============
+  
+  // iOS: gestione manuale della tastiera
+  // Android: il sistema gestisce automaticamente, non serve offset
+  const isIOS = Platform.OS === 'ios';
+  
+  // Padding bottom per la FlatList
+  const listBottomPadding = isIOS 
+    ? (iosKeyboardHeight > 0 ? iosKeyboardHeight + 60 : 60 + insets.bottom)
+    : 60; // Android: solo altezza input bar
+  
+  // Position bottom per l'input container
+  const inputBottomPosition = isIOS ? iosKeyboardHeight : 0;
+  
+  // Padding bottom per l'input container
+  const inputBottomPadding = isIOS
+  ? (iosKeyboardHeight > 0 ? spacing.xs : spacing.xs)
+  : spacing.sm
 
   return (
     <View style={styles.container}>
@@ -361,13 +401,13 @@ const GroupChat = ({ groupId, currentUserId }) => {
         renderItem={renderItem}
         contentContainerStyle={[
           styles.messagesList,
-          { paddingBottom: keyboardOffset > 0 ? keyboardOffset + 60 : 70 }
+          { paddingBottom: listBottomPadding }
         ]}
         showsVerticalScrollIndicator={false}
         onScroll={handleScroll}
         scrollEventThrottle={16}
         keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
+        keyboardDismissMode="interactive"
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyEmoji}>💬</Text>
@@ -378,10 +418,7 @@ const GroupChat = ({ groupId, currentUserId }) => {
       />
 
       {/* Typing indicator */}
-      <TypingIndicator 
-        users={typingUsers} 
-        bottomOffset={keyboardOffset > 0 ? keyboardOffset + 60 : 60} 
-      />
+      <TypingIndicator users={typingUsers} />
 
       {/* Scroll to bottom */}
       <ScrollToBottomButton
@@ -390,9 +427,16 @@ const GroupChat = ({ groupId, currentUserId }) => {
         unreadCount={unreadInView}
       />
 
-      {/* Input */}
-      <View style={[styles.inputContainer, { transform: [{ translateY: -keyboardOffset }] }]}>
+      {/* Input bar - position absolute */}
+      <View style={[
+        styles.inputContainer, 
+        { 
+          bottom: inputBottomPosition,
+          paddingBottom: inputBottomPadding,
+        }
+      ]}>
         <TextInput
+          ref={inputRef}
           style={styles.input}
           placeholder="Scrivi un messaggio..."
           placeholderTextColor={colors.textMuted}
@@ -405,6 +449,7 @@ const GroupChat = ({ groupId, currentUserId }) => {
           style={[styles.sendButton, (!messageText.trim() || isSending) && styles.sendButtonDisabled]}
           onPress={handleSend}
           disabled={!messageText.trim() || isSending}
+          activeOpacity={0.7}
         >
           {isSending ? (
             <ActivityIndicator size="small" color={colors.white} />
@@ -448,17 +493,22 @@ const styles = StyleSheet.create({
   },
   messagesList: {
     padding: spacing.md,
-    paddingBottom: 70,
     flexGrow: 1,
   },
   typingContainer: {
     position: 'absolute',
     left: spacing.md,
     right: spacing.md,
+    bottom: 70,
     backgroundColor: colors.white,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
     borderRadius: borderRadius.md,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
   },
   typingText: {
     ...typography.caption,
@@ -535,10 +585,10 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 0,
     flexDirection: 'row',
     alignItems: 'flex-end',
-    padding: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    paddingTop: spacing.sm,
     backgroundColor: colors.white,
     borderTopWidth: 1,
     borderTopColor: colors.border,
@@ -563,6 +613,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: Platform.OS === 'ios' ? 2 : 0,
   },
   sendButtonDisabled: {
     backgroundColor: colors.lightGray,
