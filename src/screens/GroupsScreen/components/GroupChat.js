@@ -1,5 +1,5 @@
 // src/screens/GroupsScreen/components/GroupChat.js
-// ✅ VERSIONE 4.1 - Fix keyboard iOS manuale + Android automatico
+// ✅ VERSIONE 4.7 - Fix scroll ultimo messaggio con ListFooterComponent
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
@@ -23,6 +23,11 @@ import { colors, typography, spacing, borderRadius } from '../../../theme';
 // Hook e componenti
 import { useGroupMessages } from '../../../hooks/useGroupMessages';
 import ChatMessage from './ChatMessage';
+
+// ==================== COSTANTI ====================
+
+// Altezza barra input + margine per vedere l'ultimo messaggio
+const INPUT_BAR_HEIGHT = 40;
 
 // ==================== SUB-COMPONENTS ====================
 
@@ -94,9 +99,8 @@ const GroupChat = ({ groupId, currentUserId }) => {
   const [messageText, setMessageText] = useState('');
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [unreadInView, setUnreadInView] = useState(0);
-  
-  // ✅ Keyboard height solo per iOS
   const [iosKeyboardHeight, setIosKeyboardHeight] = useState(0);
+  const [isReady, setIsReady] = useState(false);
 
   // ============ REFS ============
   const flatListRef = useRef(null);
@@ -105,20 +109,34 @@ const GroupChat = ({ groupId, currentUserId }) => {
   const typingTimeoutRef = useRef(null);
   const isNearBottom = useRef(true);
   const prevMessagesLength = useRef(0);
+  const hasScrolledToEnd = useRef(false);
+  const scrollTimeoutRef = useRef(null);
+  const lastContentHeight = useRef(0);
 
   // ============ EFFECTS ============
 
-  // ✅ Keyboard listener SOLO per iOS
+  // Reset quando cambia gruppo
+  useEffect(() => {
+    hasScrolledToEnd.current = false;
+    prevMessagesLength.current = 0;
+    lastContentHeight.current = 0;
+    setIsReady(false);
+    
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
+      scrollTimeoutRef.current = null;
+    }
+  }, [groupId]);
+
+  // Keyboard listener SOLO per iOS
   useEffect(() => {
     if (Platform.OS !== 'ios') return;
 
     const onKeyboardWillShow = (e) => {
       const keyboardHeight = e.endCoordinates.height;
-      // Sottrai il safe area bottom perché è già considerato
       const offset = keyboardHeight - (insets.bottom || 0);
       setIosKeyboardHeight(offset);
       
-      // Scroll to bottom quando appare la tastiera
       setTimeout(() => {
         if (isNearBottom.current) {
           flatListRef.current?.scrollToEnd({ animated: true });
@@ -139,9 +157,9 @@ const GroupChat = ({ groupId, currentUserId }) => {
     };
   }, [insets.bottom]);
 
-  // Auto-scroll quando arrivano nuovi messaggi
+  // Auto-scroll quando arrivano nuovi messaggi (solo dopo il primo scroll)
   useEffect(() => {
-    if (messages.length > prevMessagesLength.current) {
+    if (messages.length > prevMessagesLength.current && hasScrolledToEnd.current) {
       const newMessagesCount = messages.length - prevMessagesLength.current;
       
       if (isNearBottom.current) {
@@ -157,21 +175,43 @@ const GroupChat = ({ groupId, currentUserId }) => {
     prevMessagesLength.current = messages.length;
   }, [messages.length]);
 
-  // Scroll iniziale
-  useEffect(() => {
-    if (messages.length > 0 && prevMessagesLength.current === 0) {
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: false }), 200);
-    }
-  }, [messages.length]);
-
-  // Cleanup typing timeout
+  // Cleanup
   useEffect(() => {
     return () => {
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
     };
   }, []);
 
   // ============ HANDLERS ============
+
+  // Scroll con debounce - aspetta che il contenuto si stabilizzi
+  const handleContentSizeChange = useCallback((contentWidth, contentHeight) => {
+    if (hasScrolledToEnd.current) {
+      return;
+    }
+
+    if (messages.length === 0 || contentHeight === 0) {
+      return;
+    }
+
+    lastContentHeight.current = contentHeight;
+
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
+    }
+
+    scrollTimeoutRef.current = setTimeout(() => {
+      if (!hasScrolledToEnd.current && flatListRef.current) {
+        flatListRef.current.scrollToEnd({ animated: false });
+        hasScrolledToEnd.current = true;
+        
+        setTimeout(() => {
+          setIsReady(true);
+        }, 50);
+      }
+    }, 300);
+  }, [messages.length]);
 
   const dismissKeyboard = useCallback(() => {
     Keyboard.dismiss();
@@ -192,17 +232,12 @@ const GroupChat = ({ groupId, currentUserId }) => {
     const text = messageText.trim();
     if (!text || isSending) return;
 
-    // Salva il testo prima di tutto
     const textToSend = text;
     
-    // Stop typing
     sendTyping(false);
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
 
-    // Chiudi tastiera
     Keyboard.dismiss();
-    
-    // Pulisci input
     setMessageText('');
 
     const result = await sendMessage(textToSend);
@@ -366,22 +401,18 @@ const GroupChat = ({ groupId, currentUserId }) => {
 
   // ============ CALCOLI LAYOUT ============
   
-  // iOS: gestione manuale della tastiera
-  // Android: il sistema gestisce automaticamente, non serve offset
   const isIOS = Platform.OS === 'ios';
   
-  // Padding bottom per la FlatList
-  const listBottomPadding = isIOS 
-    ? (iosKeyboardHeight > 0 ? iosKeyboardHeight + 60 : 60 + insets.bottom)
-    : 60; // Android: solo altezza input bar
+  // ✅ Altezza del footer per scrollToEnd - ora parte del contenuto!
+  const listFooterHeight = isIOS 
+    ? (iosKeyboardHeight > 0 ? iosKeyboardHeight + INPUT_BAR_HEIGHT : INPUT_BAR_HEIGHT + insets.bottom)
+    : INPUT_BAR_HEIGHT;
   
-  // Position bottom per l'input container
   const inputBottomPosition = isIOS ? iosKeyboardHeight : 0;
   
-  // Padding bottom per l'input container
   const inputBottomPadding = isIOS
-  ? (iosKeyboardHeight > 0 ? spacing.xs : spacing.xs)
-  : spacing.sm
+    ? (iosKeyboardHeight > 0 ? spacing.xs : spacing.xs)
+    : spacing.sm;
 
   return (
     <View style={styles.container}>
@@ -393,16 +424,16 @@ const GroupChat = ({ groupId, currentUserId }) => {
         </TouchableOpacity>
       )}
 
-      {/* Lista messaggi */}
+      {/* Lista messaggi - nascosta finché non è pronta */}
       <FlatList
         ref={flatListRef}
         data={groupedMessages}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
-        contentContainerStyle={[
-          styles.messagesList,
-          { paddingBottom: listBottomPadding }
-        ]}
+        onContentSizeChange={handleContentSizeChange}
+        contentContainerStyle={styles.messagesList}
+        ListFooterComponent={<View style={{ height: listFooterHeight }} />}
+        style={{ opacity: isReady ? 1 : 0 }}
         showsVerticalScrollIndicator={false}
         onScroll={handleScroll}
         scrollEventThrottle={16}
@@ -417,6 +448,13 @@ const GroupChat = ({ groupId, currentUserId }) => {
         }
       />
 
+      {/* Loading mentre la chat si prepara */}
+      {!isReady && groupedMessages.length > 0 && (
+        <View style={styles.preparingContainer}>
+          <ActivityIndicator size="small" color={colors.primary} />
+        </View>
+      )}
+
       {/* Typing indicator */}
       <TypingIndicator users={typingUsers} />
 
@@ -427,7 +465,7 @@ const GroupChat = ({ groupId, currentUserId }) => {
         unreadCount={unreadInView}
       />
 
-      {/* Input bar - position absolute */}
+      {/* Input bar */}
       <View style={[
         styles.inputContainer, 
         { 
@@ -495,11 +533,17 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     flexGrow: 1,
   },
+  preparingContainer: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.background,
+  },
   typingContainer: {
     position: 'absolute',
     left: spacing.md,
     right: spacing.md,
-    bottom: 70,
+    bottom: INPUT_BAR_HEIGHT + 5,
     backgroundColor: colors.white,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
@@ -531,7 +575,7 @@ const styles = StyleSheet.create({
   scrollToBottomContainer: {
     position: 'absolute',
     right: spacing.md,
-    bottom: 80,
+    bottom: INPUT_BAR_HEIGHT + 10,
   },
   scrollToBottomButton: {
     width: 44,
