@@ -19,7 +19,8 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "NSCameraUsageDescription": "Bevi needs camera access to take photos of your drinks",
-        "NSPhotoLibraryUsageDescription": "Bevi needs photo library access to select drink photos"
+        "NSPhotoLibraryUsageDescription": "Bevi needs photo library access to select drink photos",
+        "NSUserTrackingUsageDescription": "This identifier will be used to deliver personalized ads to you."
       }
     },
     "android": {
@@ -42,7 +43,23 @@
           "color": "#FF385C"
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          }
+        }
+      ],
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-2321153105236925~3419979606",
+          "iosAppId": "ca-app-pub-2321153105236925~2130948667",
+          "userTrackingUsageDescription": "This identifier will be used to deliver personalized ads to you."
+        }
+      ]
     ],
     "extra": {
       "eas": {

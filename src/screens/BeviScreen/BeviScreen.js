@@ -1,6 +1,6 @@
 // src/screens/BeviScreen/BeviScreen.js
 // Schermata per registrare una bevuta con foto
-// ✅ AGGIORNATO: Upload foto su Cloudinary
+// ✅ AGGIORNATO: Upload foto su Cloudinary + Banner Ads
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
@@ -27,6 +27,7 @@ import {
   useGetMyDrinkStatsQuery,
 } from '../../api/beviApi';
 import { uriToBase64, formatFileSize, estimateBase64Size } from '../../utils/imageUtils';
+import BannerAd from '../../components/ads/BannerAd';
 
 // Categorie disponibili
 const DRINK_CATEGORIES = [
@@ -214,8 +215,8 @@ const BeviScreen = () => {
   const [permission, requestPermission] = useCameraPermissions();
   const [cameraOpen, setCameraOpen] = useState(false);
   const [photo, setPhoto] = useState(null);
-  const [photoBase64, setPhotoBase64] = useState(null); // ✅ NUOVO: Base64 per upload
-  const [isConverting, setIsConverting] = useState(false); // ✅ NUOVO: Stato conversione
+  const [photoBase64, setPhotoBase64] = useState(null);
+  const [isConverting, setIsConverting] = useState(false);
   const [drinkSelectorVisible, setDrinkSelectorVisible] = useState(false);
   const [facing, setFacing] = useState('back');
   const [localCooldown, setLocalCooldown] = useState(0);
@@ -275,17 +276,14 @@ const BeviScreen = () => {
 
   // Timer che decrementa ogni secondo
   useEffect(() => {
-    // Pulisci timer precedente
     if (timerRef.current) {
       clearInterval(timerRef.current);
     }
 
-    // Se c'è cooldown attivo, avvia il countdown
     if (localCooldown > 0) {
       timerRef.current = setInterval(() => {
         setLocalCooldown(prev => {
           if (prev <= 1) {
-            // Tempo scaduto! Refetch dal server per confermare
             clearInterval(timerRef.current);
             refetchCooldown();
             return 0;
@@ -295,13 +293,12 @@ const BeviScreen = () => {
       }, 1000);
     }
 
-    // Cleanup al unmount
     return () => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
     };
-  }, [localCooldown > 0]); // Dipende solo da se c'è cooldown attivo
+  }, [localCooldown > 0]);
 
   // Refetch quando la schermata torna in focus
   useFocusEffect(
@@ -317,7 +314,7 @@ const BeviScreen = () => {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // ✅ AGGIORNATO: Scatta foto e converti in base64
+  // Scatta foto e converti in base64
   const takePicture = async () => {
     if (cameraRef.current) {
       try {
@@ -336,7 +333,6 @@ const BeviScreen = () => {
           height: photoData.height,
         });
         
-        // Converti in base64 per upload
         console.log('📸 [3] Inizio conversione base64...');
         const base64Image = await uriToBase64(photoData.uri);
         
@@ -348,7 +344,6 @@ const BeviScreen = () => {
         const imageSize = estimateBase64Size(base64Image);
         console.log('📸 [5] Dimensione stimata:', formatFileSize(imageSize));
         
-        // Verifica dimensione (max 10MB)
         if (imageSize > 10 * 1024 * 1024) {
           console.log('❌ [6] Immagine troppo grande!');
           Alert.alert(
@@ -377,7 +372,7 @@ const BeviScreen = () => {
     }
   };
 
-  // ✅ AGGIORNATO: Seleziona bevanda e invia con immagine
+  // Seleziona bevanda e invia con immagine
   const handleDrinkSelect = async (drink) => {
     console.log('🍺 [1] Bevanda selezionata:', {
       id: drink.id,
@@ -394,14 +389,12 @@ const BeviScreen = () => {
     setDrinkSelectorVisible(false);
     
     try {
-      // Prepara i dati per la richiesta
       const drinkLogData = {
         drinkId: drink.id,
       };
       
       console.log('🍺 [2] photoBase64 presente?', !!photoBase64);
       
-      // ✅ IMPORTANTE: Se abbiamo una foto, inviala come base64
       if (photoBase64) {
         drinkLogData.image = photoBase64;
         console.log('🍺 [3] Aggiungo immagine alla richiesta:', {
@@ -553,7 +546,6 @@ const BeviScreen = () => {
           <View style={styles.photoPreview}>
             <Image source={{ uri: photo.uri }} style={styles.photoImage} />
             
-            {/* ✅ NUOVO: Mostra dimensione immagine */}
             {photoBase64 && (
               <View style={styles.imageSizeInfo}>
                 <Ionicons name="cloud-upload-outline" size={14} color={colors.success} />
@@ -570,6 +562,11 @@ const BeviScreen = () => {
           </View>
         ) : (
           <>
+            {/* ✅ Banner pubblicitario */}
+            <View style={styles.bannerContainer}>
+              <BannerAd />
+            </View>
+
             <TouchableOpacity 
               style={[
                 styles.mainButton,
@@ -637,7 +634,6 @@ const BeviScreen = () => {
         isLoading={drinksLoading}
       />
 
-      {/* ✅ AGGIORNATO: Loading overlay con messaggio upload */}
       {(isSubmitting || isConverting) && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color={colors.white} />
@@ -676,6 +672,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: spacing.xl,
+  },
+
+  // ✅ Banner Ad
+  bannerContainer: {
+    width: '100%',
+    marginBottom: spacing.lg,
   },
 
   // Main Button
@@ -814,7 +816,6 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.lg,
     marginBottom: spacing.sm,
   },
-  // ✅ NUOVO: Info dimensione immagine
   imageSizeInfo: {
     flexDirection: 'row',
     alignItems: 'center',
