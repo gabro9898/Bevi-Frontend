@@ -72,6 +72,14 @@ export const beviApi = createApi({
       }),
     }),
 
+    googleAuth: builder.mutation({
+  query: (credentials) => ({
+    url: '/auth/google',
+    method: 'POST',
+    body: credentials,
+  }),
+}),
+
     getMe: builder.query({
       query: () => '/auth/me',
       providesTags: ['User'],
@@ -585,6 +593,7 @@ export const {
   useLoginMutation,
   useGetMeQuery,
   useLogoutMutation,
+  useGoogleAuthMutation,
   useForgotPasswordMutation,
   useResetPasswordMutation,
   useChangePasswordMutation,
