@@ -11,6 +11,8 @@ import MainTabs from './MainTabs';
 import GroupDetailScreen from '../screens/GroupsScreen/GroupDetailScreen';
 import GroupInfoScreen from '../screens/GroupsScreen/GroupInfoScreen';
 import AnalyticsScreen from '../screens/AnalyticsScreen/AnalyticsScreen';
+import EditProfileScreen from '../screens/ProfileScreen/EditProfileScreen';
+import LegalScreen from '../screens/ProfileScreen/LegalScreen'; // ← NUOVO
 
 // Push Notifications
 import { usePushNotifications } from '../hooks/usePushNotifications';
@@ -55,6 +57,24 @@ const MainNavigator = () => {
       <Stack.Screen 
         name="Analytics" 
         component={AnalyticsScreen}
+        options={{
+          animation: 'slide_from_right',
+        }}
+      />
+
+      {/* Modifica Profilo */}
+      <Stack.Screen 
+        name="EditProfile" 
+        component={EditProfileScreen}
+        options={{
+          animation: 'slide_from_right',
+        }}
+      />
+
+      {/* Privacy e Termini */}
+      <Stack.Screen 
+        name="Legal" 
+        component={LegalScreen}
         options={{
           animation: 'slide_from_right',
         }}

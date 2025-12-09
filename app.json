@@ -11,22 +11,24 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#FF385C"
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.tuonome.bevi",
+      "bundleIdentifier": "com.gabro9898.bevi",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "Bevi needs camera access to take photos of your drinks",
+        "NSPhotoLibraryUsageDescription": "Bevi needs photo library access to select drink photos"
       }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#FF385C"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.tuonome.bevi",
+      "package": "com.gabro9898.bevi",
       "useNextNotificationsApi": true
     },
     "web": {
@@ -37,7 +39,7 @@
         "expo-notifications",
         {
           "icon": "./assets/notification-icon.png",
-          "color": "#7C3AED"
+          "color": "#FF385C"
         }
       ],
       "expo-web-browser"
@@ -45,7 +47,9 @@
     "extra": {
       "eas": {
         "projectId": "c6680460-e950-41a1-a19b-eb338329c6ea"
-      }
+      },
+      "privacyPolicyUrl": "https://gabro9898.github.io/bevi-docs/privacy-policy.html",
+      "termsOfServiceUrl": "https://gabro9898.github.io/bevi-docs/terms-of-service.html"
     },
     "owner": "gabro9898"
   }

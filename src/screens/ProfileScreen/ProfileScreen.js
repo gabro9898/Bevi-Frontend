@@ -304,7 +304,7 @@ const ProfileScreen = () => {
             <MenuButton 
               icon="person-outline" 
               label="Modifica Profilo" 
-              onPress={() => {}}
+              onPress={() => navigation.navigate('EditProfile')} 
             />
             <MenuButton 
               icon="notifications-outline" 
@@ -312,10 +312,10 @@ const ProfileScreen = () => {
               onPress={() => {}}
             />
             <MenuButton 
-              icon="shield-checkmark-outline" 
-              label="Privacy" 
-              onPress={() => {}}
-            />
+  icon="shield-checkmark-outline" 
+  label="Privacy e Termini" 
+  onPress={() => navigation.navigate('Legal')}
+/>
             <MenuButton 
               icon="help-circle-outline" 
               label="Aiuto" 

@@ -159,6 +159,16 @@ export const beviApi = createApi({
       query: (userId) => `/users/${userId}/stats`,
     }),
 
+    // Elimina account
+deleteMyAccount: builder.mutation({
+  query: ({ password, confirmation }) => ({
+    url: '/users/account',
+    method: 'DELETE',
+    body: { password, confirmation },
+  }),
+  invalidatesTags: ['User'],
+}),
+
     // ==================== UPLOAD IMMAGINI (CLOUDINARY) ====================
     // Usa endpoint generico: POST /api/upload con type: "profile" | "group" | "drink"
 
@@ -601,6 +611,7 @@ export const {
   // User
   useGetMyProfileQuery,
   useUpdateMyProfileMutation,
+  useDeleteMyAccountMutation,
   useGetMySettingsQuery,
   useUpdateMySettingsMutation,
   useSearchUsersQuery,
