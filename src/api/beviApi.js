@@ -405,6 +405,22 @@ deleteMyAccount: builder.mutation({
       query: (id) => `/groups/${id}/invite`,
     }),
 
+        toggleMuteGroup: builder.mutation({
+      query: (groupId) => ({
+        url: `/groups/${groupId}/mute`,
+        method: 'PUT',
+      }),
+      invalidatesTags: (result, error, groupId) => [{ type: 'Groups', id: groupId }],
+    }),
+
+    togglePinGroup: builder.mutation({
+      query: (groupId) => ({
+        url: `/groups/${groupId}/pin`,
+        method: 'PUT',
+      }),
+      invalidatesTags: ['Groups'],
+    }),
+    
     updateGroupChallengeSettings: builder.mutation({
       query: ({ groupId, challengeCategory, leaderboardMode, resetScores }) => ({
         url: `/groups/${groupId}/challenge-settings`,
@@ -664,6 +680,8 @@ export const {
   useGetGroupInviteLinkQuery,
   useUpdateGroupChallengeSettingsMutation,
   usePublishGroupLeaderboardMutation,
+    useToggleMuteGroupMutation,
+  useTogglePinGroupMutation,
   
   // Messages
   useGetGroupMessagesQuery,

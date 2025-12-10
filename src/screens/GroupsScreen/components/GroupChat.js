@@ -1,5 +1,5 @@
 // src/screens/GroupsScreen/components/GroupChat.js
-// ✅ VERSIONE 4.7 - Fix scroll ultimo messaggio con ListFooterComponent
+// ✅ VERSIONE 4.8 - Fix safe area Android per input bar
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
@@ -403,12 +403,16 @@ const GroupChat = ({ groupId, currentUserId }) => {
   
   const isIOS = Platform.OS === 'ios';
   
-  // ✅ Altezza del footer per scrollToEnd - ora parte del contenuto!
-  const listFooterHeight = isIOS 
-    ? (iosKeyboardHeight > 0 ? iosKeyboardHeight + INPUT_BAR_HEIGHT : INPUT_BAR_HEIGHT + insets.bottom)
-    : INPUT_BAR_HEIGHT;
+  // ✅ FIX: Considera safe area per entrambe le piattaforme
+  const bottomInset = insets.bottom || 0;
   
-  const inputBottomPosition = isIOS ? iosKeyboardHeight : 0;
+  // Altezza del footer per scrollToEnd
+  const listFooterHeight = isIOS 
+    ? (iosKeyboardHeight > 0 ? iosKeyboardHeight + INPUT_BAR_HEIGHT : INPUT_BAR_HEIGHT + bottomInset)
+    : INPUT_BAR_HEIGHT + bottomInset + spacing.sm;
+  
+  // ✅ FIX: Android usa insets.bottom per stare sopra la navigation bar
+  const inputBottomPosition = isIOS ? iosKeyboardHeight : bottomInset;
   
   const inputBottomPadding = isIOS
     ? (iosKeyboardHeight > 0 ? spacing.xs : spacing.xs)

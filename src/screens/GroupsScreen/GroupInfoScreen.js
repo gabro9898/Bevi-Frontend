@@ -1,6 +1,6 @@
 // src/screens/GroupsScreen/GroupInfoScreen.js
 // Schermata info gruppo con membri, impostazioni e abbandona
-// ✅ AGGIORNATO: Upload immagine + Condividi gruppo con deep link
+// ✅ AGGIORNATO: Toggle mute funzionante + Upload immagine + Condividi gruppo
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -26,6 +26,7 @@ import {
   usePublishGroupLeaderboardMutation,
   useUploadGroupImageMutation,
   useGetGroupInviteLinkQuery,
+  useToggleMuteGroupMutation, // ✅ NUOVO
 } from '../../api/beviApi';
 import { showImagePicker, formatFileSize } from '../../utils/imageUtils';
 import { shareGroup } from '../../hooks/useDeepLinks';
@@ -91,7 +92,7 @@ const MemberItem = ({ member, isCurrentUser }) => {
 };
 
 // Componente impostazione toggle
-const SettingToggle = ({ icon, label, description, value, onValueChange, disabled }) => (
+const SettingToggle = ({ icon, label, description, value, onValueChange, disabled, isLoading }) => (
   <View style={[styles.settingItem, disabled && styles.settingItemDisabled]}>
     <View style={styles.settingIcon}>
       <Ionicons name={icon} size={22} color={disabled ? colors.lightGray : colors.primary} />
@@ -102,13 +103,17 @@ const SettingToggle = ({ icon, label, description, value, onValueChange, disable
         <Text style={styles.settingDescription}>{description}</Text>
       )}
     </View>
-    <Switch
-      value={value}
-      onValueChange={onValueChange}
-      disabled={disabled}
-      trackColor={{ false: colors.lightGray, true: colors.primary + '50' }}
-      thumbColor={value ? colors.primary : colors.gray}
-    />
+    {isLoading ? (
+      <ActivityIndicator size="small" color={colors.primary} />
+    ) : (
+      <Switch
+        value={value}
+        onValueChange={onValueChange}
+        disabled={disabled}
+        trackColor={{ false: colors.lightGray, true: colors.primary + '50' }}
+        thumbColor={value ? colors.primary : colors.gray}
+      />
+    )}
   </View>
 );
 
@@ -232,7 +237,6 @@ const GroupInfoScreen = ({ route, navigation }) => {
   const { groupId, groupName } = route.params;
   
   // Stati per le impostazioni
-  const [isMuted, setIsMuted] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
@@ -240,21 +244,25 @@ const GroupInfoScreen = ({ route, navigation }) => {
   // API hooks
   const { data: groupData, isLoading: groupLoading, refetch: refetchGroup } = useGetGroupByIdQuery(groupId);
   const { data: membersData, isLoading: membersLoading } = useGetGroupMembersQuery(groupId);
-  const { data: inviteData } = useGetGroupInviteLinkQuery(groupId); // ✅ NUOVO
+  const { data: inviteData } = useGetGroupInviteLinkQuery(groupId);
   const [leaveGroup, { isLoading: isLeaving }] = useLeaveGroupMutation();
   const [updateChallengeSettings, { isLoading: isUpdating }] = useUpdateGroupChallengeSettingsMutation();
   const [publishLeaderboard, { isLoading: isPublishing }] = usePublishGroupLeaderboardMutation();
   const [uploadGroupImage] = useUploadGroupImageMutation();
+  const [toggleMuteGroup, { isLoading: isTogglingMute }] = useToggleMuteGroupMutation(); // ✅ NUOVO
 
   // Estrai dati
   const group = groupData?.data?.group || groupData?.data || groupData;
   const members = membersData?.data?.members || membersData?.data || membersData || [];
-  const inviteCode = inviteData?.data?.inviteCode || group?.inviteCode; // ✅ NUOVO
+  const inviteCode = inviteData?.data?.inviteCode || group?.inviteCode;
 
   // Trova l'utente corrente nei membri
   const currentUserMember = members.find(m => m.isMe);
   const isAdmin = currentUserMember?.role === 'ADMIN';
   const isModOrAdmin = ['ADMIN', 'MODERATOR'].includes(currentUserMember?.role);
+
+  // ✅ NUOVO: Stato isMuted inizializzato dal backend
+  const isMuted = currentUserMember?.isMuted || group?.isMuted || false;
 
   // Ordina membri: Admin > Moderator > Membri
   const sortedMembers = [...members].sort((a, b) => {
@@ -262,7 +270,17 @@ const GroupInfoScreen = ({ route, navigation }) => {
     return (roleOrder[a.role] || 2) - (roleOrder[b.role] || 2);
   });
 
-  // ✅ NUOVO: Gestione condivisione gruppo
+  // ✅ NUOVO: Gestione toggle mute
+  const handleToggleMute = async () => {
+    try {
+      await toggleMuteGroup(groupId).unwrap();
+      refetchGroup();
+    } catch (error) {
+      Alert.alert('Errore', error?.data?.message || 'Impossibile cambiare impostazione notifiche');
+    }
+  };
+
+  // Gestione condivisione gruppo
   const handleShareGroup = async () => {
     if (!inviteCode) {
       Alert.alert('Errore', 'Impossibile ottenere il codice di invito');
@@ -533,7 +551,7 @@ const GroupInfoScreen = ({ route, navigation }) => {
           )}
         </View>
 
-        {/* ✅ NUOVO: Sezione Condivisione */}
+        {/* Sezione Condivisione */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Invita Amici</Text>
           
@@ -616,7 +634,8 @@ const GroupInfoScreen = ({ route, navigation }) => {
             label="Silenzia notifiche"
             description="Non ricevere notifiche da questo gruppo"
             value={isMuted}
-            onValueChange={setIsMuted}
+            onValueChange={handleToggleMute}
+            isLoading={isTogglingMute}
           />
         </View>
 
@@ -786,7 +805,7 @@ const styles = StyleSheet.create({
     marginLeft: spacing.xs,
   },
 
-  // ✅ NUOVO: Invite Code Box
+  // Invite Code Box
   inviteCodeBox: {
     backgroundColor: colors.white,
     padding: spacing.md,
