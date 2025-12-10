@@ -5,6 +5,7 @@ import React from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import GeneralScreen from '../screens/GeneralScreen/GeneralScreen';
 import GroupsScreen from '../screens/GroupsScreen/GroupsScreen';
@@ -31,10 +32,29 @@ const BeviTabButton = ({ focused }) => {
 };
 
 const MainTabs = () => {
+  const insets = useSafeAreaInsets();
+  
+  // Calcola altezza tab bar dinamicamente
+  const tabBarHeight = Platform.OS === 'ios' 
+    ? 60 + insets.bottom 
+    : 60 + Math.max(insets.bottom, 10);
+  
+  const tabBarPaddingBottom = Platform.OS === 'ios'
+    ? insets.bottom
+    : Math.max(insets.bottom, 10);
+
   return (
     <Tab.Navigator
       screenOptions={{
-        tabBarStyle: styles.tabBar,
+        tabBarStyle: {
+          backgroundColor: colors.white,
+          borderTopWidth: 1,
+          borderTopColor: colors.border,
+          height: tabBarHeight,
+          paddingBottom: tabBarPaddingBottom,
+          paddingTop: 8,
+          ...shadows.small,
+        },
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.gray,
         tabBarLabelStyle: styles.tabBarLabel,
@@ -111,15 +131,6 @@ const MainTabs = () => {
 };
 
 const styles = StyleSheet.create({
-  tabBar: {
-    backgroundColor: colors.white,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    height: Platform.OS === 'ios' ? 88 : 60,
-    paddingBottom: Platform.OS === 'ios' ? 28 : 8,
-    paddingTop: 8,
-    ...shadows.small,
-  },
   tabBarLabel: {
     fontSize: 11,
     fontWeight: '500',

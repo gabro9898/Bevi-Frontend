@@ -30,7 +30,8 @@
       },
       "edgeToEdgeEnabled": true,
       "package": "com.gabro9898.bevi",
-      "useNextNotificationsApi": true
+      "useNextNotificationsApi": true,
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "favicon": "./assets/favicon.png"

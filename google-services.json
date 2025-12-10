@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "980915796532",
+    "project_id": "bevi-35193",
+    "storage_bucket": "bevi-35193.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:980915796532:android:e6c9bad8f5e4af3a026861",
+        "android_client_info": {
+          "package_name": "com.gabro9898.bevi"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCZvrzYk6ZB4a9PFU8nhEr9TD81cyVQ52k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
