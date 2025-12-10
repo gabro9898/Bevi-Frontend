@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Dimensions,
+  RefreshControl,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BarChart, PieChart } from 'react-native-gifted-charts';
@@ -72,13 +73,21 @@ const TopItem = ({ rank, icon, name, count, percentage, color }) => (
   </View>
 );
 
-const AnalyticsScreen = ({ navigation }) => {
+const AnalyticsScreen = () => {
   const [selectedPeriod, setSelectedPeriod] = useState(30);
+  const [refreshing, setRefreshing] = useState(false);
 
   // API
   const { data: analyticsData, isLoading, refetch } = useGetMyAnalyticsQuery(selectedPeriod);
 
   const analytics = analyticsData?.data || analyticsData || {};
+
+  // Pull to refresh
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await refetch();
+    setRefreshing(false);
+  };
 
   // Prepara dati per grafico orario
   const hourlyData = (analytics.hourly?.distribution || [])
@@ -105,15 +114,11 @@ const AnalyticsScreen = ({ navigation }) => {
     icon: cat.icon,
   }));
 
-  if (isLoading) {
+  if (isLoading && !analyticsData) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Le mie Statistiche</Text>
-          <View style={styles.headerSpacer} />
+          <Text style={styles.headerTitle}>Statistiche</Text>
         </View>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -130,14 +135,20 @@ const AnalyticsScreen = ({ navigation }) => {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Le mie Statistiche</Text>
-        <View style={styles.headerSpacer} />
+        <Text style={styles.headerTitle}>Statistiche</Text>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
+      >
         {/* Selettore Periodo */}
         <View style={styles.periodSelector}>
           {PERIODS.map((period) => (
@@ -353,25 +364,18 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
 
-  // Header
+  // Header (semplificato per tab)
   header: {
-    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     backgroundColor: colors.white,
   },
-  backButton: {
-    padding: spacing.sm,
-  },
   headerTitle: {
     ...typography.h3,
-  },
-  headerSpacer: {
-    width: 40,
   },
 
   // Period Selector

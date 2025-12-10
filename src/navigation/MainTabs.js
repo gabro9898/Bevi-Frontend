@@ -9,7 +9,7 @@ import { Ionicons } from '@expo/vector-icons';
 import GeneralScreen from '../screens/GeneralScreen/GeneralScreen';
 import GroupsScreen from '../screens/GroupsScreen/GroupsScreen';
 import BeviScreen from '../screens/BeviScreen/BeviScreen';
-import MessagesScreen from '../screens/MessagesScreen/MessagesScreen';
+import AnalyticsScreen from '../screens/AnalyticsScreen/AnalyticsScreen';
 import ProfileScreen from '../screens/ProfileScreen/ProfileScreen';
 
 import { colors, shadows } from '../theme';
@@ -80,12 +80,12 @@ const MainTabs = () => {
       />
 
       <Tab.Screen
-        name="Messaggi"
-        component={MessagesScreen}
+        name="Statistiche"
+        component={AnalyticsScreen}
         options={{
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons 
-              name={focused ? 'chatbubbles' : 'chatbubbles-outline'} 
+              name={focused ? 'bar-chart' : 'bar-chart-outline'} 
               size={size} 
               color={color} 
             />

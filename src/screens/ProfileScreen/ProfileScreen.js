@@ -1,6 +1,6 @@
 // src/screens/ProfileScreen/ProfileScreen.js
 // Schermata profilo utente con statistiche reali
-// ✅ AGGIORNATO: Upload avatar su Cloudinary
+// ✅ AGGIORNATO: Rimosso pulsante Analytics (ora nella tab bar)
 
 import React, { useEffect, useState } from 'react';
 import { 
@@ -26,7 +26,7 @@ import {
   useGetMyDrinkStatsQuery,
   useUploadAvatarMutation,
 } from '../../api/beviApi';
-import { showImagePicker, formatFileSize, estimateBase64Size } from '../../utils/imageUtils';
+import { showImagePicker, formatFileSize } from '../../utils/imageUtils';
 
 const StatCard = ({ icon, value, label, color }) => (
   <View style={styles.statCard}>
@@ -53,7 +53,7 @@ const ProfileScreen = () => {
   const navigation = useNavigation();
   const currentUser = useSelector(selectCurrentUser);
   
-  // ✅ NUOVO: Stati per upload avatar
+  // Stati per upload avatar
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   
   // Query per il profilo (chiama /auth/me)
@@ -71,7 +71,7 @@ const ProfileScreen = () => {
     refetch: refetchStats 
   } = useGetMyDrinkStatsQuery();
 
-  // ✅ Mutation per avatar
+  // Mutation per avatar
   const [uploadAvatar] = useUploadAvatarMutation();
 
   const [refreshing, setRefreshing] = React.useState(false);
@@ -101,11 +101,7 @@ const ProfileScreen = () => {
     dispatch(clearCredentials());
   };
 
-  const handleOpenAnalytics = () => {
-    navigation.navigate('Analytics');
-  };
-
-  // ✅ Menu per cambiare avatar
+  // Menu per cambiare avatar
   const handleChangeAvatar = async () => {
     try {
       // Mostra picker immagine (camera o galleria)
@@ -188,7 +184,7 @@ const ProfileScreen = () => {
         {/* Header Profilo */}
         <View style={styles.header}>
           <View style={styles.avatarContainer}>
-            {/* ✅ Avatar con loading */}
+            {/* Avatar con loading */}
             <TouchableOpacity 
               style={styles.avatar}
               onPress={handleChangeAvatar}
@@ -204,7 +200,7 @@ const ProfileScreen = () => {
               )}
             </TouchableOpacity>
             
-            {/* ✅ Pulsante modifica avatar */}
+            {/* Pulsante modifica avatar */}
             <TouchableOpacity 
               style={[styles.editAvatarButton, isUploadingAvatar && styles.editAvatarButtonDisabled]}
               onPress={handleChangeAvatar}
@@ -253,26 +249,6 @@ const ProfileScreen = () => {
           />
         </View>
 
-        {/* Pulsante Analytics */}
-        <View style={styles.section}>
-          <TouchableOpacity 
-            style={styles.analyticsButton} 
-            onPress={handleOpenAnalytics}
-            activeOpacity={0.8}
-          >
-            <View style={styles.analyticsButtonLeft}>
-              <View style={styles.analyticsIconContainer}>
-                <Ionicons name="bar-chart" size={24} color={colors.white} />
-              </View>
-              <View style={styles.analyticsTextContainer}>
-                <Text style={styles.analyticsButtonTitle}>Le mie Statistiche</Text>
-                <Text style={styles.analyticsButtonSubtitle}>Grafici e analisi delle tue bevute</Text>
-              </View>
-            </View>
-            <Ionicons name="chevron-forward" size={24} color={colors.primary} />
-          </TouchableOpacity>
-        </View>
-
         {/* Statistiche dettagliate */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Riepilogo veloce</Text>
@@ -312,10 +288,10 @@ const ProfileScreen = () => {
               onPress={() => {}}
             />
             <MenuButton 
-  icon="shield-checkmark-outline" 
-  label="Privacy e Termini" 
-  onPress={() => navigation.navigate('Legal')}
-/>
+              icon="shield-checkmark-outline" 
+              label="Privacy e Termini" 
+              onPress={() => navigation.navigate('Legal')}
+            />
             <MenuButton 
               icon="help-circle-outline" 
               label="Aiuto" 
@@ -336,7 +312,7 @@ const ProfileScreen = () => {
         <Text style={styles.version}>Bevi App v1.0.0</Text>
       </ScrollView>
 
-      {/* ✅ NUOVO: Overlay loading durante upload */}
+      {/* Overlay loading durante upload */}
       {isUploadingAvatar && (
         <View style={styles.uploadingOverlay}>
           <View style={styles.uploadingBox}>
@@ -384,7 +360,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.veryLightGray,
     justifyContent: 'center',
     alignItems: 'center',
-    overflow: 'hidden', // ✅ Assicura che l'immagine sia clippata
+    overflow: 'hidden',
   },
   avatarImage: {
     width: 100,
@@ -481,45 +457,6 @@ const styles = StyleSheet.create({
     ...typography.h4,
     marginBottom: spacing.md,
   },
-
-  // Analytics Button
-  analyticsButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: colors.primary + '10',
-    borderRadius: borderRadius.lg,
-    padding: spacing.md,
-    borderWidth: 1,
-    borderColor: colors.primary + '30',
-  },
-  analyticsButtonLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  analyticsIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: spacing.md,
-  },
-  analyticsTextContainer: {
-    flex: 1,
-  },
-  analyticsButtonTitle: {
-    ...typography.body,
-    fontWeight: '600',
-    color: colors.textPrimary,
-  },
-  analyticsButtonSubtitle: {
-    ...typography.caption,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
   
   // Detailed Stats
   detailedStats: {
@@ -592,7 +529,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.lg,
   },
 
-  // ✅ NUOVO: Overlay upload
+  // Overlay upload
   uploadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.5)',
