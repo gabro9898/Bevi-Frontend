@@ -1,6 +1,6 @@
 // src/screens/GroupsScreen/GroupDetailScreen.js
 // Schermata dettaglio gruppo con tabs: Chat, Ruota, Classifica
-// ✅ AGGIORNATO: Immagine gruppo nell'header
+// ✅ AGGIORNATO: Condivisione con deep link + fallback web
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -10,7 +10,6 @@ import {
   SafeAreaView,
   TouchableOpacity,
   ActivityIndicator,
-  Share,
   Alert,
   Image,
 } from 'react-native';
@@ -23,6 +22,7 @@ import {
   useGetMeQuery,
 } from '../../api/beviApi';
 import { useSelector } from 'react-redux';
+import { shareGroup } from '../../hooks/useDeepLinks';
 
 // Componenti tabs
 import GroupChat from './components/GroupChat';
@@ -107,22 +107,15 @@ const GroupDetailScreen = ({ route, navigation }) => {
     });
   };
 
-  // Condividi link invito
+  // ✅ AGGIORNATO: Condividi link invito con deep link
   const handleShare = async () => {
     if (!inviteCode) {
       Alert.alert('Errore', 'Impossibile ottenere il codice di invito');
       return;
     }
 
-    try {
-      const groupDisplayName = group?.name || groupName;
-      await Share.share({
-        message: `🍺 Unisciti al gruppo "${groupDisplayName}" su Bevi!\n\nUsa il codice: ${inviteCode}\n\nOppure scarica l'app e inserisci il codice per unirti!`,
-        title: `Invito a ${groupDisplayName}`,
-      });
-    } catch (error) {
-      console.log('Errore condivisione:', error);
-    }
+    const groupDisplayName = group?.name || groupName;
+    await shareGroup(inviteCode, groupDisplayName, groupId);
   };
 
   // Render contenuto tab

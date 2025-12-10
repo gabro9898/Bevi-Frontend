@@ -1,6 +1,6 @@
 // src/screens/GroupsScreen/GroupInfoScreen.js
 // Schermata info gruppo con membri, impostazioni e abbandona
-// ✅ AGGIORNATO: Upload immagine gruppo su Cloudinary
+// ✅ AGGIORNATO: Upload immagine + Condividi gruppo con deep link
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -25,8 +25,10 @@ import {
   useUpdateGroupChallengeSettingsMutation,
   usePublishGroupLeaderboardMutation,
   useUploadGroupImageMutation,
+  useGetGroupInviteLinkQuery,
 } from '../../api/beviApi';
 import { showImagePicker, formatFileSize } from '../../utils/imageUtils';
+import { shareGroup } from '../../hooks/useDeepLinks';
 
 const ROLE_LABELS = {
   ADMIN: { label: 'Admin', color: colors.primary, icon: 'shield' },
@@ -111,15 +113,15 @@ const SettingToggle = ({ icon, label, description, value, onValueChange, disable
 );
 
 // Componente impostazione con azione
-const SettingAction = ({ icon, label, description, value, onPress, disabled }) => (
+const SettingAction = ({ icon, label, description, value, onPress, disabled, iconColor }) => (
   <TouchableOpacity 
     style={[styles.settingItem, disabled && styles.settingItemDisabled]}
     onPress={onPress}
     disabled={disabled}
     activeOpacity={0.7}
   >
-    <View style={styles.settingIcon}>
-      <Ionicons name={icon} size={22} color={disabled ? colors.lightGray : colors.primary} />
+    <View style={[styles.settingIcon, iconColor && { backgroundColor: iconColor + '15' }]}>
+      <Ionicons name={icon} size={22} color={disabled ? colors.lightGray : (iconColor || colors.primary)} />
     </View>
     <View style={styles.settingInfo}>
       <Text style={[styles.settingLabel, disabled && styles.settingLabelDisabled]}>{label}</Text>
@@ -233,19 +235,21 @@ const GroupInfoScreen = ({ route, navigation }) => {
   const [isMuted, setIsMuted] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showLeaderboardModal, setShowLeaderboardModal] = useState(false);
-  const [isUploadingImage, setIsUploadingImage] = useState(false); // ✅ NUOVO
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   // API hooks
   const { data: groupData, isLoading: groupLoading, refetch: refetchGroup } = useGetGroupByIdQuery(groupId);
   const { data: membersData, isLoading: membersLoading } = useGetGroupMembersQuery(groupId);
+  const { data: inviteData } = useGetGroupInviteLinkQuery(groupId); // ✅ NUOVO
   const [leaveGroup, { isLoading: isLeaving }] = useLeaveGroupMutation();
   const [updateChallengeSettings, { isLoading: isUpdating }] = useUpdateGroupChallengeSettingsMutation();
   const [publishLeaderboard, { isLoading: isPublishing }] = usePublishGroupLeaderboardMutation();
-  const [uploadGroupImage] = useUploadGroupImageMutation(); // ✅ NUOVO
+  const [uploadGroupImage] = useUploadGroupImageMutation();
 
   // Estrai dati
   const group = groupData?.data?.group || groupData?.data || groupData;
   const members = membersData?.data?.members || membersData?.data || membersData || [];
+  const inviteCode = inviteData?.data?.inviteCode || group?.inviteCode; // ✅ NUOVO
 
   // Trova l'utente corrente nei membri
   const currentUserMember = members.find(m => m.isMe);
@@ -258,7 +262,18 @@ const GroupInfoScreen = ({ route, navigation }) => {
     return (roleOrder[a.role] || 2) - (roleOrder[b.role] || 2);
   });
 
-  // ✅ NUOVO: Gestione upload immagine gruppo
+  // ✅ NUOVO: Gestione condivisione gruppo
+  const handleShareGroup = async () => {
+    if (!inviteCode) {
+      Alert.alert('Errore', 'Impossibile ottenere il codice di invito');
+      return;
+    }
+
+    const groupDisplayName = group?.name || groupName;
+    await shareGroup(inviteCode, groupDisplayName, groupId);
+  };
+
+  // Gestione upload immagine gruppo
   const handleChangeGroupImage = async () => {
     if (!isAdmin) {
       Alert.alert('Non autorizzato', 'Solo gli admin possono cambiare l\'immagine del gruppo');
@@ -269,12 +284,11 @@ const GroupInfoScreen = ({ route, navigation }) => {
     console.log('🖼️ [1.1] Group ID:', groupId);
     
     try {
-      // Mostra picker immagine (camera o galleria)
       const imageResult = await showImagePicker({
         title: 'Cambia immagine gruppo',
         message: 'Scegli da dove caricare la foto',
         allowsEditing: true,
-        aspect: [1, 1], // Immagine quadrata
+        aspect: [1, 1],
         quality: 0.8,
       });
 
@@ -294,7 +308,6 @@ const GroupInfoScreen = ({ route, navigation }) => {
 
       console.log('📤 [3] Invio richiesta uploadGroupImage...');
       
-      // Upload su Cloudinary via endpoint /api/upload
       const result = await uploadGroupImage({
         groupId: groupId,
         image: imageResult.base64,
@@ -302,7 +315,6 @@ const GroupInfoScreen = ({ route, navigation }) => {
 
       console.log('✅ [4] Risposta ricevuta:', JSON.stringify(result, null, 2));
 
-      // Refetch per aggiornare l'immagine
       refetchGroup();
 
       Alert.alert('Successo! 📸', 'L\'immagine del gruppo è stata aggiornata');
@@ -475,7 +487,7 @@ const GroupInfoScreen = ({ route, navigation }) => {
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Info gruppo */}
         <View style={styles.groupHeader}>
-          {/* ✅ AGGIORNATO: Avatar gruppo cliccabile per admin */}
+          {/* Avatar gruppo cliccabile per admin */}
           <View style={styles.groupAvatarContainer}>
             <TouchableOpacity 
               style={styles.groupAvatarLarge}
@@ -492,7 +504,7 @@ const GroupInfoScreen = ({ route, navigation }) => {
               )}
             </TouchableOpacity>
             
-            {/* ✅ NUOVO: Pulsante modifica immagine (solo admin) */}
+            {/* Pulsante modifica immagine (solo admin) */}
             {isAdmin && (
               <TouchableOpacity 
                 style={[styles.editGroupImageButton, isUploadingImage && styles.editGroupImageButtonDisabled]}
@@ -521,6 +533,26 @@ const GroupInfoScreen = ({ route, navigation }) => {
           )}
         </View>
 
+        {/* ✅ NUOVO: Sezione Condivisione */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Invita Amici</Text>
+          
+          <SettingAction
+            icon="share-social-outline"
+            label="Condividi Gruppo"
+            description="Invia un link per far unire i tuoi amici"
+            onPress={handleShareGroup}
+            iconColor={colors.success}
+          />
+          
+          {inviteCode && (
+            <View style={styles.inviteCodeBox}>
+              <Text style={styles.inviteCodeLabel}>Codice invito</Text>
+              <Text style={styles.inviteCodeValue}>{inviteCode}</Text>
+            </View>
+          )}
+        </View>
+
         {/* Sezione Membri */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>
@@ -528,7 +560,7 @@ const GroupInfoScreen = ({ route, navigation }) => {
           </Text>
           {sortedMembers.map((member) => (
             <MemberItem
-              key={member.id || member.oduserId}
+              key={member.id || member.userId}
               member={member}
               isCurrentUser={member.isMe}
             />
@@ -624,7 +656,7 @@ const GroupInfoScreen = ({ route, navigation }) => {
         onSelect={handleLeaderboardModeChange}
       />
 
-      {/* ✅ NUOVO: Overlay loading durante upload */}
+      {/* Overlay loading durante upload */}
       {isUploadingImage && (
         <View style={styles.uploadingOverlay}>
           <View style={styles.uploadingBox}>
@@ -682,7 +714,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
-  // ✅ NUOVO: Container per avatar gruppo
   groupAvatarContainer: {
     position: 'relative',
     marginBottom: spacing.md,
@@ -696,7 +727,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     overflow: 'hidden',
   },
-  // ✅ NUOVO: Immagine gruppo
   groupAvatarImage: {
     width: 80,
     height: 80,
@@ -705,7 +735,6 @@ const styles = StyleSheet.create({
   groupEmoji: {
     fontSize: 40,
   },
-  // ✅ NUOVO: Pulsante modifica immagine gruppo
   editGroupImageButton: {
     position: 'absolute',
     bottom: 0,
@@ -755,6 +784,28 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
     marginBottom: spacing.sm,
     marginLeft: spacing.xs,
+  },
+
+  // ✅ NUOVO: Invite Code Box
+  inviteCodeBox: {
+    backgroundColor: colors.white,
+    padding: spacing.md,
+    borderRadius: borderRadius.lg,
+    marginTop: spacing.xs,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderStyle: 'dashed',
+  },
+  inviteCodeLabel: {
+    ...typography.caption,
+    color: colors.textTertiary,
+    marginBottom: spacing.xs,
+  },
+  inviteCodeValue: {
+    ...typography.h3,
+    color: colors.primary,
+    letterSpacing: 2,
   },
 
   // Member Item
@@ -994,7 +1045,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  // ✅ NUOVO: Overlay upload
+  // Overlay upload
   uploadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0,0,0,0.5)',

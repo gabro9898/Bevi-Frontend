@@ -13,6 +13,7 @@ import GroupInfoScreen from '../screens/GroupsScreen/GroupInfoScreen';
 import AnalyticsScreen from '../screens/AnalyticsScreen/AnalyticsScreen';
 import EditProfileScreen from '../screens/ProfileScreen/EditProfileScreen';
 import LegalScreen from '../screens/ProfileScreen/LegalScreen'; // ← NUOVO
+import { useDeepLinks } from '../hooks/useDeepLinks';
 
 // Push Notifications
 import { usePushNotifications } from '../hooks/usePushNotifications';
@@ -22,6 +23,7 @@ const Stack = createNativeStackNavigator();
 const MainNavigator = () => {
   // Inizializza le notifiche push (registra token e listener)
   usePushNotifications();
+   useDeepLinks();
 
   return (
     <Stack.Navigator
