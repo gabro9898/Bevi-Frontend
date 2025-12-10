@@ -283,19 +283,9 @@ const ProfileScreen = () => {
               onPress={() => navigation.navigate('EditProfile')} 
             />
             <MenuButton 
-              icon="notifications-outline" 
-              label="Notifiche" 
-              onPress={() => {}}
-            />
-            <MenuButton 
               icon="shield-checkmark-outline" 
               label="Privacy e Termini" 
               onPress={() => navigation.navigate('Legal')}
-            />
-            <MenuButton 
-              icon="help-circle-outline" 
-              label="Aiuto" 
-              onPress={() => {}}
             />
           </View>
         </View>

@@ -22,7 +22,9 @@ import {
   useGetWeeklyLeaderboardQuery,
   useGetMonthlyLeaderboardQuery,
   useGetCategoryLeaderboardQuery,
+  useGetUnreadNotificationCountQuery,
 } from '../../api/beviApi';
+import NotificationsModal from '../../components/NotificationsModal';
 
 // Categorie per il filtro temporale
 const TIME_FILTERS = [
@@ -139,6 +141,13 @@ const LeaderboardItem = ({ item, index, showSeparator }) => {
 const GeneralScreen = () => {
   const [activeCategory, setActiveCategory] = useState('all');
   const [activeTimeFilter, setActiveTimeFilter] = useState('daily');
+  const [notificationsModalVisible, setNotificationsModalVisible] = useState(false);
+
+  // Query conteggio notifiche non lette
+  const { data: unreadData } = useGetUnreadNotificationCountQuery(undefined, {
+    pollingInterval: 30000, // Aggiorna ogni 30 secondi
+  });
+  const unreadCount = unreadData?.data?.unreadCount || 0;
 
   // Trova la categoria backend corrispondente
   const selectedCategory = DRINK_CATEGORIES.find(c => c.id === activeCategory);
@@ -278,8 +287,18 @@ const GeneralScreen = () => {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Classifica</Text>
-        <TouchableOpacity style={styles.notificationButton}>
+        <TouchableOpacity 
+          style={styles.notificationButton}
+          onPress={() => setNotificationsModalVisible(true)}
+        >
           <Ionicons name="notifications-outline" size={24} color={colors.textPrimary} />
+          {unreadCount > 0 && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </Text>
+            </View>
+          )}
         </TouchableOpacity>
       </View>
 
@@ -353,6 +372,12 @@ const GeneralScreen = () => {
           }
         />
       )}
+
+      {/* Modal Notifiche */}
+      <NotificationsModal 
+        visible={notificationsModalVisible}
+        onClose={() => setNotificationsModalVisible(false)}
+      />
     </SafeAreaView>
   );
 };
@@ -374,6 +399,24 @@ const styles = StyleSheet.create({
   },
   notificationButton: {
     padding: spacing.sm,
+    position: 'relative',
+  },
+  badge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    backgroundColor: colors.error,
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  badgeText: {
+    color: colors.white,
+    fontSize: 10,
+    fontWeight: '700',
   },
   
   // Categorie
