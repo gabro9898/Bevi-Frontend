@@ -1,18 +1,20 @@
 // src/screens/AnalyticsScreen/AnalyticsScreen.js
 // Schermata statistiche con grafici
+// ✅ FIX: SafeArea Android
 
 import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   TouchableOpacity,
   ActivityIndicator,
   Dimensions,
   RefreshControl,
+  StatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { BarChart, PieChart } from 'react-native-gifted-charts';
 import { colors, typography, spacing, borderRadius } from '../../theme';
@@ -74,6 +76,7 @@ const TopItem = ({ rank, icon, name, count, percentage, color }) => (
 );
 
 const AnalyticsScreen = () => {
+  const insets = useSafeAreaInsets();
   const [selectedPeriod, setSelectedPeriod] = useState(30);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -116,7 +119,8 @@ const AnalyticsScreen = () => {
 
   if (isLoading && !analyticsData) {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Statistiche</Text>
         </View>
@@ -124,7 +128,7 @@ const AnalyticsScreen = () => {
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Caricamento statistiche...</Text>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -132,7 +136,9 @@ const AnalyticsScreen = () => {
   const hasData = summary.totalDrinks > 0;
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+      
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Statistiche</Text>
@@ -344,7 +350,7 @@ const AnalyticsScreen = () => {
 
         <View style={styles.bottomSpacer} />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 };
 

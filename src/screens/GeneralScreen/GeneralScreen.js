@@ -1,12 +1,12 @@
 // src/screens/GeneralScreen/GeneralScreen.js
 // Schermata principale con classifiche
+// ✅ FIX: SafeArea Android
 
 import React, { useState, useCallback } from 'react';
 import { 
   View, 
   Text, 
   StyleSheet, 
-  SafeAreaView,
   StatusBar,
   ScrollView,
   TouchableOpacity,
@@ -14,7 +14,9 @@ import {
   RefreshControl,
   ActivityIndicator,
   Image,
+  Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 import { 
@@ -139,6 +141,7 @@ const LeaderboardItem = ({ item, index, showSeparator }) => {
 
 // Componente principale
 const GeneralScreen = () => {
+  const insets = useSafeAreaInsets();
   const [activeCategory, setActiveCategory] = useState('all');
   const [activeTimeFilter, setActiveTimeFilter] = useState('daily');
   const [notificationsModalVisible, setNotificationsModalVisible] = useState(false);
@@ -281,7 +284,7 @@ const GeneralScreen = () => {
     : displayList;
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
       
       {/* Header */}
@@ -378,7 +381,7 @@ const GeneralScreen = () => {
         visible={notificationsModalVisible}
         onClose={() => setNotificationsModalVisible(false)}
       />
-    </SafeAreaView>
+    </View>
   );
 };
 

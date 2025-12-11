@@ -1,13 +1,12 @@
 // src/screens/GroupsScreen/GroupInfoScreen.js
 // Schermata info gruppo con membri, impostazioni e abbandona
-// ✅ AGGIORNATO: Toggle mute funzionante + Upload immagine + Condividi gruppo
+// ✅ FIX: SafeArea Android con useSafeAreaInsets()
 
 import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   TouchableOpacity,
   Image,
@@ -15,7 +14,9 @@ import {
   Alert,
   Switch,
   Modal,
+  StatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius } from '../../theme';
 import { 
@@ -26,7 +27,7 @@ import {
   usePublishGroupLeaderboardMutation,
   useUploadGroupImageMutation,
   useGetGroupInviteLinkQuery,
-  useToggleMuteGroupMutation, // ✅ NUOVO
+  useToggleMuteGroupMutation,
 } from '../../api/beviApi';
 import { showImagePicker, formatFileSize } from '../../utils/imageUtils';
 import { shareGroup } from '../../hooks/useDeepLinks';
@@ -234,6 +235,7 @@ const LeaderboardModeModal = ({ visible, onClose, currentValue, onSelect }) => (
 );
 
 const GroupInfoScreen = ({ route, navigation }) => {
+  const insets = useSafeAreaInsets();
   const { groupId, groupName } = route.params;
   
   // Stati per le impostazioni
@@ -249,7 +251,7 @@ const GroupInfoScreen = ({ route, navigation }) => {
   const [updateChallengeSettings, { isLoading: isUpdating }] = useUpdateGroupChallengeSettingsMutation();
   const [publishLeaderboard, { isLoading: isPublishing }] = usePublishGroupLeaderboardMutation();
   const [uploadGroupImage] = useUploadGroupImageMutation();
-  const [toggleMuteGroup, { isLoading: isTogglingMute }] = useToggleMuteGroupMutation(); // ✅ NUOVO
+  const [toggleMuteGroup, { isLoading: isTogglingMute }] = useToggleMuteGroupMutation();
 
   // Estrai dati
   const group = groupData?.data?.group || groupData?.data || groupData;
@@ -261,7 +263,7 @@ const GroupInfoScreen = ({ route, navigation }) => {
   const isAdmin = currentUserMember?.role === 'ADMIN';
   const isModOrAdmin = ['ADMIN', 'MODERATOR'].includes(currentUserMember?.role);
 
-  // ✅ NUOVO: Stato isMuted inizializzato dal backend
+  // Stato isMuted inizializzato dal backend
   const isMuted = currentUserMember?.isMuted || group?.isMuted || false;
 
   // Ordina membri: Admin > Moderator > Membri
@@ -270,7 +272,7 @@ const GroupInfoScreen = ({ route, navigation }) => {
     return (roleOrder[a.role] || 2) - (roleOrder[b.role] || 2);
   });
 
-  // ✅ NUOVO: Gestione toggle mute
+  // Gestione toggle mute
   const handleToggleMute = async () => {
     try {
       await toggleMuteGroup(groupId).unwrap();
@@ -476,12 +478,13 @@ const GroupInfoScreen = ({ route, navigation }) => {
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Caricamento...</Text>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -489,7 +492,9 @@ const GroupInfoScreen = ({ route, navigation }) => {
   const groupImage = group?.image || group?.imageUrl;
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+      
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
@@ -684,7 +689,7 @@ const GroupInfoScreen = ({ route, navigation }) => {
           </View>
         </View>
       )}
-    </SafeAreaView>
+    </View>
   );
 };
 

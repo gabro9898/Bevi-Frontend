@@ -1,18 +1,19 @@
 // src/screens/GroupsScreen/GroupDetailScreen.js
 // Schermata dettaglio gruppo con tabs: Chat, Ruota, Classifica
-// ✅ AGGIORNATO: Condivisione con deep link + fallback web
+// ✅ FIX: SafeArea Android con useSafeAreaInsets()
 
 import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
   ActivityIndicator,
   Alert,
   Image,
+  StatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius } from '../../theme';
 import { 
@@ -53,6 +54,7 @@ const TabButton = ({ tab, isActive, onPress }) => (
 );
 
 const GroupDetailScreen = ({ route, navigation }) => {
+  const insets = useSafeAreaInsets();
   const { groupId, groupName } = route.params;
   const [activeTab, setActiveTab] = useState('chat');
 
@@ -88,12 +90,12 @@ const GroupDetailScreen = ({ route, navigation }) => {
   const { data: membersData, isLoading: membersLoading } = useGetGroupMembersQuery(groupId);
   const { data: inviteData } = useGetGroupInviteLinkQuery(groupId);
 
-  // Estrai dati gruppo e membri - ✅ FIX: groupData.data.group
+  // Estrai dati gruppo e membri
   const group = groupData?.data?.group || groupData?.data || groupData;
   const members = membersData?.data?.members || membersData?.data || [];
   const memberCount = members.length;
 
-  // ✅ NUOVO: Estrai immagine gruppo
+  // Estrai immagine gruppo
   const groupImage = group?.image || group?.imageUrl;
 
   // Estrai codice invito
@@ -107,7 +109,7 @@ const GroupDetailScreen = ({ route, navigation }) => {
     });
   };
 
-  // ✅ AGGIORNATO: Condividi link invito con deep link
+  // Condividi link invito con deep link
   const handleShare = async () => {
     if (!inviteCode) {
       Alert.alert('Errore', 'Impossibile ottenere il codice di invito');
@@ -136,18 +138,21 @@ const GroupDetailScreen = ({ route, navigation }) => {
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Caricamento gruppo...</Text>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Header - ✅ AGGIORNATO con immagine gruppo */}
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+      
+      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
@@ -156,7 +161,7 @@ const GroupDetailScreen = ({ route, navigation }) => {
           <Ionicons name="arrow-back" size={24} color={colors.textPrimary} />
         </TouchableOpacity>
 
-        {/* ✅ NUOVO: Avatar gruppo nell'header */}
+        {/* Avatar gruppo nell'header */}
         <TouchableOpacity 
           style={styles.headerContent}
           onPress={handleGoToInfo}
@@ -212,7 +217,7 @@ const GroupDetailScreen = ({ route, navigation }) => {
       <View style={styles.content}>
         {renderTabContent()}
       </View>
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -232,7 +237,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
 
-  // Header - ✅ AGGIORNATO
+  // Header
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -246,13 +251,13 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     marginRight: spacing.xs,
   },
-  // ✅ NUOVO: Container con avatar e info
+  // Container con avatar e info
   headerContent: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
   },
-  // ✅ NUOVO: Avatar nell'header
+  // Avatar nell'header
   headerAvatar: {
     width: 40,
     height: 40,

@@ -1,13 +1,12 @@
 // src/screens/GroupsScreen/GroupsScreen.js
 // Schermata lista gruppi - Stile WhatsApp
-// ✅ AGGIORNATO: Mostra immagine gruppo se presente
+// ✅ FIX: SafeArea Android con useSafeAreaInsets()
 
 import React, { useState } from 'react';
 import { 
   View, 
   Text, 
   StyleSheet, 
-  SafeAreaView,
   FlatList,
   TouchableOpacity,
   RefreshControl,
@@ -16,7 +15,9 @@ import {
   Modal,
   Alert,
   Image,
+  StatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
@@ -51,13 +52,12 @@ const formatLastMessageTime = (dateString) => {
 };
 
 // Componente per il singolo gruppo - Stile WhatsApp
-// ✅ AGGIORNATO: Supporta immagine gruppo
 const GroupCard = ({ group, onPress, isLast }) => {
   const unreadCount = group.unreadCount || group.membership?.unreadCount || 0;
   const lastMessage = group.lastMessage || group.lastMessageText;
   const lastActivity = group.lastActivityAt || group.updatedAt;
   
-  // ✅ NUOVO: Estrai immagine gruppo
+  // Estrai immagine gruppo
   const groupImage = group.image || group.imageUrl;
   
   return (
@@ -66,7 +66,7 @@ const GroupCard = ({ group, onPress, isLast }) => {
       onPress={onPress}
       activeOpacity={0.6}
     >
-      {/* Avatar - ✅ AGGIORNATO: Mostra immagine se presente */}
+      {/* Avatar */}
       <View style={styles.groupAvatar}>
         {groupImage ? (
           <Image 
@@ -258,6 +258,7 @@ const GroupModal = ({ visible, onClose, onCreateGroup, onJoinGroup }) => {
 };
 
 const GroupsScreen = () => {
+  const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const [modalVisible, setModalVisible] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -313,7 +314,9 @@ const GroupsScreen = () => {
     : [];
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
+      
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>I Miei Gruppi</Text>
@@ -376,7 +379,7 @@ const GroupsScreen = () => {
         onCreateGroup={handleCreateGroup}
         onJoinGroup={handleJoinGroup}
       />
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -430,9 +433,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.veryLightGray,
     justifyContent: 'center',
     alignItems: 'center',
-    overflow: 'hidden', // ✅ NUOVO: Per ritagliare l'immagine
+    overflow: 'hidden',
   },
-  // ✅ NUOVO: Stile immagine gruppo
   groupAvatarImage: {
     width: 56,
     height: 56,

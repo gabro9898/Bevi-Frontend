@@ -29,6 +29,7 @@
         "backgroundColor": "#FF385C"
       },
       "edgeToEdgeEnabled": true,
+      "softwareKeyboardLayoutMode": "pan",
       "package": "com.gabro9898.bevi",
       "useNextNotificationsApi": true,
       "googleServicesFile": "./google-services.json"

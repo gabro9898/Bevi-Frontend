@@ -1,5 +1,5 @@
 // src/screens/GroupsScreen/components/GroupChat.js
-// ✅ VERSIONE 4.8 - Fix safe area Android per input bar
+// ✅ VERSIONE PULITA - InputBar platform-specific separato
 
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
@@ -7,7 +7,6 @@ import {
   Text,
   StyleSheet,
   FlatList,
-  TextInput,
   TouchableOpacity,
   Platform,
   ActivityIndicator,
@@ -23,11 +22,19 @@ import { colors, typography, spacing, borderRadius } from '../../../theme';
 // Hook e componenti
 import { useGroupMessages } from '../../../hooks/useGroupMessages';
 import ChatMessage from './ChatMessage';
+import InputBar from './InputBar'; // ✅ Auto-seleziona .ios.js o .android.js
 
 // ==================== COSTANTI ====================
+const INPUT_BAR_HEIGHT = 56;
+const isIOS = Platform.OS === 'ios';
 
-// Altezza barra input + margine per vedere l'ultimo messaggio
-const INPUT_BAR_HEIGHT = 40;
+// ==================== DEBUG ====================
+const DEBUG = true;
+const log = (tag, data) => {
+  if (DEBUG) {
+    console.log(`📱 [${tag}]`, typeof data === 'object' ? JSON.stringify(data) : data);
+  }
+};
 
 // ==================== SUB-COMPONENTS ====================
 
@@ -46,7 +53,7 @@ const ScrollToBottomButton = ({ visible, onPress, unreadCount }) => {
       duration: 200,
       useNativeDriver: true,
     }).start();
-  }, [visible, opacity]);
+  }, [visible]);
 
   if (!visible) return null;
 
@@ -66,7 +73,6 @@ const ScrollToBottomButton = ({ visible, onPress, unreadCount }) => {
 
 const TypingIndicator = ({ users }) => {
   if (users.length === 0) return null;
-
   return (
     <View style={styles.typingContainer}>
       <Text style={styles.typingText}>
@@ -81,6 +87,19 @@ const TypingIndicator = ({ users }) => {
 // ==================== MAIN COMPONENT ====================
 
 const GroupChat = ({ groupId, currentUserId }) => {
+  // ============ SAFE AREA ============
+  const insets = useSafeAreaInsets();
+  const bottomInset = insets.bottom || 0;
+
+  // ============ DEBUG: Log platform info ============
+  useEffect(() => {
+    log('INIT', {
+      platform: Platform.OS,
+      bottomInset,
+      inputBarHeight: INPUT_BAR_HEIGHT,
+    });
+  }, [bottomInset]);
+
   // ============ HOOK MESSAGGI ============
   const {
     messages,
@@ -95,87 +114,50 @@ const GroupChat = ({ groupId, currentUserId }) => {
     normalizeId,
   } = useGroupMessages(groupId, currentUserId);
 
-  // ============ LOCAL STATE (solo UI) ============
+  // ============ LOCAL STATE ============
   const [messageText, setMessageText] = useState('');
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [unreadInView, setUnreadInView] = useState(0);
-  const [iosKeyboardHeight, setIosKeyboardHeight] = useState(0);
   const [isReady, setIsReady] = useState(false);
 
   // ============ REFS ============
   const flatListRef = useRef(null);
-  const inputRef = useRef(null);
-  const insets = useSafeAreaInsets();
   const typingTimeoutRef = useRef(null);
   const isNearBottom = useRef(true);
   const prevMessagesLength = useRef(0);
   const hasScrolledToEnd = useRef(false);
   const scrollTimeoutRef = useRef(null);
-  const lastContentHeight = useRef(0);
 
-  // ============ EFFECTS ============
-
-  // Reset quando cambia gruppo
+  // ============ RESET ON GROUP CHANGE ============
   useEffect(() => {
     hasScrolledToEnd.current = false;
     prevMessagesLength.current = 0;
-    lastContentHeight.current = 0;
     setIsReady(false);
     
     if (scrollTimeoutRef.current) {
       clearTimeout(scrollTimeoutRef.current);
-      scrollTimeoutRef.current = null;
     }
   }, [groupId]);
 
-  // Keyboard listener SOLO per iOS
-  useEffect(() => {
-    if (Platform.OS !== 'ios') return;
-
-    const onKeyboardWillShow = (e) => {
-      const keyboardHeight = e.endCoordinates.height;
-      const offset = keyboardHeight - (insets.bottom || 0);
-      setIosKeyboardHeight(offset);
-      
-      setTimeout(() => {
-        if (isNearBottom.current) {
-          flatListRef.current?.scrollToEnd({ animated: true });
-        }
-      }, 100);
-    };
-
-    const onKeyboardWillHide = () => {
-      setIosKeyboardHeight(0);
-    };
-
-    const showSub = Keyboard.addListener('keyboardWillShow', onKeyboardWillShow);
-    const hideSub = Keyboard.addListener('keyboardWillHide', onKeyboardWillHide);
-
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, [insets.bottom]);
-
-  // Auto-scroll quando arrivano nuovi messaggi (solo dopo il primo scroll)
+  // ============ AUTO-SCROLL NEW MESSAGES ============
   useEffect(() => {
     if (messages.length > prevMessagesLength.current && hasScrolledToEnd.current) {
-      const newMessagesCount = messages.length - prevMessagesLength.current;
+      const newCount = messages.length - prevMessagesLength.current;
       
       if (isNearBottom.current) {
         setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
       } else {
-        const lastMessages = messages.slice(-newMessagesCount);
-        const othersMessages = lastMessages.filter(m => !m.isMe);
-        if (othersMessages.length > 0) {
-          setUnreadInView(count => count + othersMessages.length);
+        const lastMsgs = messages.slice(-newCount);
+        const othersMsgs = lastMsgs.filter(m => !m.isMe);
+        if (othersMsgs.length > 0) {
+          setUnreadInView(c => c + othersMsgs.length);
         }
       }
     }
     prevMessagesLength.current = messages.length;
   }, [messages.length]);
 
-  // Cleanup
+  // ============ CLEANUP ============
   useEffect(() => {
     return () => {
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
@@ -185,37 +167,20 @@ const GroupChat = ({ groupId, currentUserId }) => {
 
   // ============ HANDLERS ============
 
-  // Scroll con debounce - aspetta che il contenuto si stabilizzi
-  const handleContentSizeChange = useCallback((contentWidth, contentHeight) => {
-    if (hasScrolledToEnd.current) {
-      return;
-    }
+  const handleContentSizeChange = useCallback((w, h) => {
+    if (hasScrolledToEnd.current) return;
+    if (messages.length === 0 || h === 0) return;
 
-    if (messages.length === 0 || contentHeight === 0) {
-      return;
-    }
-
-    lastContentHeight.current = contentHeight;
-
-    if (scrollTimeoutRef.current) {
-      clearTimeout(scrollTimeoutRef.current);
-    }
+    if (scrollTimeoutRef.current) clearTimeout(scrollTimeoutRef.current);
 
     scrollTimeoutRef.current = setTimeout(() => {
       if (!hasScrolledToEnd.current && flatListRef.current) {
         flatListRef.current.scrollToEnd({ animated: false });
         hasScrolledToEnd.current = true;
-        
-        setTimeout(() => {
-          setIsReady(true);
-        }, 50);
+        setTimeout(() => setIsReady(true), 50);
       }
     }, 300);
   }, [messages.length]);
-
-  const dismissKeyboard = useCallback(() => {
-    Keyboard.dismiss();
-  }, []);
 
   const handleTextChange = useCallback((text) => {
     setMessageText(text);
@@ -228,24 +193,40 @@ const GroupChat = ({ groupId, currentUserId }) => {
     }
   }, [sendTyping]);
 
+  const handleInputFocus = useCallback(() => {
+    log('INPUT', 'Focus');
+    // Auto-scroll to bottom quando si apre la tastiera
+    setTimeout(() => {
+      if (isNearBottom.current) {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }
+    }, 300);
+  }, []);
+
+  const handleInputBlur = useCallback(() => {
+    log('INPUT', 'Blur');
+  }, []);
+
   const handleSend = useCallback(async () => {
     const text = messageText.trim();
     if (!text || isSending) return;
 
+    log('SEND', `Invio: "${text}"`);
+
     const textToSend = text;
-    
     sendTyping(false);
     if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-
-    Keyboard.dismiss();
     setMessageText('');
 
     const result = await sendMessage(textToSend);
-    
+
     if (!result.success) {
       setMessageText(textToSend);
       Alert.alert('Errore', 'Impossibile inviare il messaggio');
+      log('SEND', 'Errore invio');
     } else {
+      log('SEND', 'Successo');
+      Keyboard.dismiss();
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 150);
     }
   }, [messageText, isSending, sendMessage, sendTyping]);
@@ -258,9 +239,7 @@ const GroupChat = ({ groupId, currentUserId }) => {
         style: 'destructive',
         onPress: async () => {
           const result = await deleteMessage(messageId);
-          if (!result.success) {
-            Alert.alert('Errore', 'Impossibile eliminare');
-          }
+          if (!result.success) Alert.alert('Errore', 'Impossibile eliminare');
         },
       },
     ]);
@@ -272,7 +251,7 @@ const GroupChat = ({ groupId, currentUserId }) => {
 
     Keyboard.dismiss();
 
-    if (Platform.OS === 'ios') {
+    if (isIOS) {
       ActionSheetIOS.showActionSheetWithOptions(
         {
           options: isMine ? ['Annulla', 'Copia', 'Elimina'] : ['Annulla', 'Copia'],
@@ -296,21 +275,22 @@ const GroupChat = ({ groupId, currentUserId }) => {
 
   const handleScroll = useCallback((event) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    const distanceFromBottom = contentSize.height - contentOffset.y - layoutMeasurement.height;
+    const distFromBottom = contentSize.height - contentOffset.y - layoutMeasurement.height;
 
-    const wasNearBottom = isNearBottom.current;
-    isNearBottom.current = distanceFromBottom < 100;
+    const wasNear = isNearBottom.current;
+    isNearBottom.current = distFromBottom < 100;
+    setShowScrollButton(distFromBottom > 300);
 
-    setShowScrollButton(distanceFromBottom > 300);
-
-    if (!wasNearBottom && isNearBottom.current) {
-      setUnreadInView(0);
-    }
+    if (!wasNear && isNearBottom.current) setUnreadInView(0);
   }, []);
 
   const scrollToBottom = useCallback(() => {
     flatListRef.current?.scrollToEnd({ animated: true });
     setUnreadInView(0);
+  }, []);
+
+  const dismissKeyboard = useCallback(() => {
+    Keyboard.dismiss();
   }, []);
 
   // ============ FORMATTERS ============
@@ -342,38 +322,33 @@ const GroupChat = ({ groupId, currentUserId }) => {
 
       const prevMsg = messages[index - 1];
       const nextMsg = messages[index + 1];
+      const isSpecial = ['SYSTEM', 'DRINK_LOG', 'LEADERBOARD', 'WHEEL_RESULT'].includes(msg.type);
       
-      const isSpecialType = ['SYSTEM', 'DRINK_LOG', 'LEADERBOARD', 'WHEEL_RESULT'].includes(msg.type);
-      
-      const prevSameSender = prevMsg && 
+      const prevSame = prevMsg && 
         normalizeId(prevMsg.sender?.id || prevMsg.senderId) === normalizeId(msg.sender?.id || msg.senderId) &&
         formatDate(prevMsg.createdAt) === msgDate &&
-        !['SYSTEM', 'DRINK_LOG', 'LEADERBOARD', 'WHEEL_RESULT'].includes(prevMsg.type) &&
-        !isSpecialType;
+        !['SYSTEM', 'DRINK_LOG', 'LEADERBOARD', 'WHEEL_RESULT'].includes(prevMsg.type) && !isSpecial;
       
-      const nextSameSender = nextMsg &&
+      const nextSame = nextMsg &&
         normalizeId(nextMsg.sender?.id || nextMsg.senderId) === normalizeId(msg.sender?.id || msg.senderId) &&
         formatDate(nextMsg.createdAt) === msgDate &&
-        !['SYSTEM', 'DRINK_LOG', 'LEADERBOARD', 'WHEEL_RESULT'].includes(nextMsg.type) &&
-        !isSpecialType;
+        !['SYSTEM', 'DRINK_LOG', 'LEADERBOARD', 'WHEEL_RESULT'].includes(nextMsg.type) && !isSpecial;
 
       grouped.push({
         type: 'message',
         ...msg,
-        isFirstInGroup: !prevSameSender,
-        isLastInGroup: !nextSameSender,
+        isFirstInGroup: !prevSame,
+        isLastInGroup: !nextSame,
       });
     });
 
     return grouped;
   }, [messages, normalizeId, formatDate]);
 
-  // ============ RENDER ============
+  // ============ RENDER ITEM ============
 
   const renderItem = useCallback(({ item }) => {
-    if (item.type === 'date') {
-      return <DateSeparator date={item.date} />;
-    }
+    if (item.type === 'date') return <DateSeparator date={item.date} />;
 
     return (
       <ChatMessage
@@ -389,7 +364,8 @@ const GroupChat = ({ groupId, currentUserId }) => {
 
   const keyExtractor = useCallback((item) => item.id?.toString() || `temp-${Math.random()}`, []);
 
-  // Loading state
+  // ============ LOADING ============
+
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -399,28 +375,11 @@ const GroupChat = ({ groupId, currentUserId }) => {
     );
   }
 
-  // ============ CALCOLI LAYOUT ============
-  
-  const isIOS = Platform.OS === 'ios';
-  
-  // ✅ FIX: Considera safe area per entrambe le piattaforme
-  const bottomInset = insets.bottom || 0;
-  
-  // Altezza del footer per scrollToEnd
-  const listFooterHeight = isIOS 
-    ? (iosKeyboardHeight > 0 ? iosKeyboardHeight + INPUT_BAR_HEIGHT : INPUT_BAR_HEIGHT + bottomInset)
-    : INPUT_BAR_HEIGHT + bottomInset + spacing.sm;
-  
-  // ✅ FIX: Android usa insets.bottom per stare sopra la navigation bar
-  const inputBottomPosition = isIOS ? iosKeyboardHeight : bottomInset;
-  
-  const inputBottomPadding = isIOS
-    ? (iosKeyboardHeight > 0 ? spacing.xs : spacing.xs)
-    : spacing.sm;
+  // ============ RENDER ============
 
   return (
     <View style={styles.container}>
-      {/* Banner connessione */}
+      {/* Connection banner */}
       {!isConnected && (
         <TouchableOpacity style={styles.connectionBanner} onPress={reconnect}>
           <Ionicons name="cloud-offline" size={14} color={colors.warning} />
@@ -428,16 +387,18 @@ const GroupChat = ({ groupId, currentUserId }) => {
         </TouchableOpacity>
       )}
 
-      {/* Lista messaggi - nascosta finché non è pronta */}
+      {/* Messages list */}
       <FlatList
         ref={flatListRef}
         data={groupedMessages}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
         onContentSizeChange={handleContentSizeChange}
-        contentContainerStyle={styles.messagesList}
-        ListFooterComponent={<View style={{ height: listFooterHeight }} />}
-        style={{ opacity: isReady ? 1 : 0 }}
+        contentContainerStyle={[
+          styles.messagesList,
+          { paddingBottom: INPUT_BAR_HEIGHT + bottomInset + spacing.md }
+        ]}
+        style={[styles.flatList, { opacity: isReady ? 1 : 0 }]}
         showsVerticalScrollIndicator={false}
         onScroll={handleScroll}
         scrollEventThrottle={16}
@@ -452,7 +413,7 @@ const GroupChat = ({ groupId, currentUserId }) => {
         }
       />
 
-      {/* Loading mentre la chat si prepara */}
+      {/* Preparing overlay */}
       {!isReady && groupedMessages.length > 0 && (
         <View style={styles.preparingContainer}>
           <ActivityIndicator size="small" color={colors.primary} />
@@ -460,7 +421,11 @@ const GroupChat = ({ groupId, currentUserId }) => {
       )}
 
       {/* Typing indicator */}
-      <TypingIndicator users={typingUsers} />
+      {typingUsers.length > 0 && (
+        <View style={styles.typingWrapper}>
+          <TypingIndicator users={typingUsers} />
+        </View>
+      )}
 
       {/* Scroll to bottom */}
       <ScrollToBottomButton
@@ -469,37 +434,15 @@ const GroupChat = ({ groupId, currentUserId }) => {
         unreadCount={unreadInView}
       />
 
-      {/* Input bar */}
-      <View style={[
-        styles.inputContainer, 
-        { 
-          bottom: inputBottomPosition,
-          paddingBottom: inputBottomPadding,
-        }
-      ]}>
-        <TextInput
-          ref={inputRef}
-          style={styles.input}
-          placeholder="Scrivi un messaggio..."
-          placeholderTextColor={colors.textMuted}
-          value={messageText}
-          onChangeText={handleTextChange}
-          multiline
-          maxLength={1000}
-        />
-        <TouchableOpacity
-          style={[styles.sendButton, (!messageText.trim() || isSending) && styles.sendButtonDisabled]}
-          onPress={handleSend}
-          disabled={!messageText.trim() || isSending}
-          activeOpacity={0.7}
-        >
-          {isSending ? (
-            <ActivityIndicator size="small" color={colors.white} />
-          ) : (
-            <Ionicons name="send" size={18} color={colors.white} />
-          )}
-        </TouchableOpacity>
-      </View>
+      {/* ✅ INPUT BAR - Platform specific */}
+      <InputBar
+        value={messageText}
+        onChangeText={handleTextChange}
+        onSend={handleSend}
+        isSending={isSending}
+        onFocus={handleInputFocus}
+        onBlur={handleInputBlur}
+      />
     </View>
   );
 };
@@ -533,6 +476,9 @@ const styles = StyleSheet.create({
     color: colors.warning,
     marginLeft: spacing.xs,
   },
+  flatList: {
+    flex: 1,
+  },
   messagesList: {
     padding: spacing.md,
     flexGrow: 1,
@@ -543,11 +489,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.background,
   },
+  typingWrapper: {
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.xs,
+  },
   typingContainer: {
-    position: 'absolute',
-    left: spacing.md,
-    right: spacing.md,
-    bottom: INPUT_BAR_HEIGHT + 5,
     backgroundColor: colors.white,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.xs,
@@ -557,6 +503,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
     elevation: 2,
+    alignSelf: 'flex-start',
   },
   typingText: {
     ...typography.caption,
@@ -579,7 +526,7 @@ const styles = StyleSheet.create({
   scrollToBottomContainer: {
     position: 'absolute',
     right: spacing.md,
-    bottom: INPUT_BAR_HEIGHT + 10,
+    bottom: INPUT_BAR_HEIGHT + spacing.lg,
   },
   scrollToBottomButton: {
     width: 44,
@@ -628,43 +575,6 @@ const styles = StyleSheet.create({
   emptySubtext: {
     ...typography.body,
     color: colors.textTertiary,
-  },
-  inputContainer: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    paddingHorizontal: spacing.sm,
-    paddingTop: spacing.sm,
-    backgroundColor: colors.white,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  input: {
-    flex: 1,
-    minHeight: 36,
-    maxHeight: 100,
-    backgroundColor: colors.veryLightGray,
-    borderRadius: 18,
-    paddingHorizontal: spacing.md,
-    paddingVertical: Platform.OS === 'ios' ? spacing.sm : spacing.xs,
-    marginRight: spacing.sm,
-    ...typography.body,
-    color: colors.textPrimary,
-    fontSize: 15,
-  },
-  sendButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: Platform.OS === 'ios' ? 2 : 0,
-  },
-  sendButtonDisabled: {
-    backgroundColor: colors.lightGray,
   },
 });
 

@@ -1,9 +1,11 @@
 // App.js
-// Entry point dell'applicazione Bevi
+// ✅ Con react-native-keyboard-controller per gestione tastiera robusta
 
 import React, { useEffect } from 'react';
-import { StatusBar } from 'react-native';
+import { StatusBar, Platform } from 'react-native';
 import { Provider } from 'react-redux';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { store } from './src/store';
 import RootNavigator from './src/navigation/RootNavigator';
 import { initializeAds } from './src/utils/initAds';
@@ -17,8 +19,16 @@ export default function App() {
 
   return (
     <Provider store={store}>
-      <StatusBar barStyle="dark-content" />
-      <RootNavigator />
+      <SafeAreaProvider>
+        <KeyboardProvider>
+          <StatusBar 
+            barStyle="dark-content" 
+            backgroundColor="transparent"
+            translucent={Platform.OS === 'android'}
+          />
+          <RootNavigator />
+        </KeyboardProvider>
+      </SafeAreaProvider>
     </Provider>
   );
 }

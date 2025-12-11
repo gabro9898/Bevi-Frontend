@@ -1,48 +1,115 @@
 {
-  "name": "frontend",
-  "version": "1.0.0",
-  "main": "index.js",
-  "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web"
+  "expo": {
+    "name": "Bevi",
+    "slug": "bevi",
+    "scheme": "bevi",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FF385C"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.gabro9898.bevi",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "Bevi needs camera access to take photos of your drinks",
+        "NSPhotoLibraryUsageDescription": "Bevi needs photo library access to select drink photos",
+        "NSUserTrackingUsageDescription": "This identifier will be used to deliver personalized ads to you."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FF385C"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.gabro9898.bevi",
+      "useNextNotificationsApi": true,
+      "googleServicesFile": "./google-services.json"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "react-native-reanimated/plugin",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#FF385C"
+        }
+      ],
+      "expo-web-browser",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          }
+        }
+      ],
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-2321153105236925~3419979606",
+          "iosAppId": "ca-app-pub-2321153105236925~2130948667",
+          "userTrackingUsageDescription": "This identifier will be used to deliver personalized ads to you."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "c6680460-e950-41a1-a19b-eb338329c6ea"
+      },
+      "privacyPolicyUrl": "https://gabro9898.github.io/bevi-docs/privacy-policy.html",
+      "termsOfServiceUrl": "https://gabro9898.github.io/bevi-docs/terms-of-service.html"
+    },
+    "owner": "gabro9898"
   },
   "dependencies": {
-    "@react-native-async-storage/async-storage": "2.2.0",
-    "@react-navigation/bottom-tabs": "^7.8.7",
-    "@react-navigation/native": "^7.1.22",
-    "@react-navigation/native-stack": "^7.8.1",
-    "@reduxjs/toolkit": "^2.11.0",
+    "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-navigation/bottom-tabs": "^7.8.12",
+    "@react-navigation/native": "^7.1.25",
+    "@react-navigation/native-stack": "^7.8.6",
+    "@reduxjs/toolkit": "^2.11.1",
     "axios": "^1.13.2",
-    "eas-cli": "^16.28.0",
-    "expo": "~54.0.25",
-    "expo-auth-session": "~7.0.10",
+    "expo": "^54.0.27",
+    "expo-auth-session": "^7.0.10",
     "expo-build-properties": "^1.0.10",
-    "expo-camera": "~17.0.9",
-    "expo-constants": "~18.0.10",
-    "expo-crypto": "~15.0.8",
-    "expo-dev-client": "~6.0.20",
-    "expo-device": "~8.0.9",
-    "expo-file-system": "~19.0.19",
-    "expo-image-picker": "~17.0.8",
-    "expo-linear-gradient": "~15.0.8",
-    "expo-notifications": "~0.32.13",
-    "expo-status-bar": "~3.0.8",
+    "expo-camera": "^17.0.10",
+    "expo-constants": "^18.0.11",
+    "expo-crypto": "^15.0.8",
+    "expo-dev-client": "^6.0.20",
+    "expo-device": "^8.0.10",
+    "expo-file-system": "^19.0.20",
+    "expo-image-picker": "^17.0.9",
+    "expo-linear-gradient": "^15.0.8",
+    "expo-notifications": "^0.32.14",
+    "expo-status-bar": "^3.0.9",
     "expo-tracking-transparency": "^6.0.8",
-    "expo-web-browser": "~15.0.10",
-    "react": "19.1.0",
-    "react-dom": "19.1.0",
-    "react-native": "0.81.5",
-    "react-native-gifted-charts": "^1.4.69",
+    "expo-web-browser": "^15.0.10",
+    "react": "^19.1.0",
+    "react-native": "^0.81.5",
+    "react-native-gifted-charts": "^1.4.70",
     "react-native-google-mobile-ads": "^16.0.0",
+    "react-native-keyboard-controller": "^1.20.1",
     "react-native-linear-gradient": "^2.8.3",
-    "react-native-safe-area-context": "~5.6.0",
-    "react-native-screens": "~4.16.0",
-    "react-native-svg": "15.12.1",
-    "react-native-web": "^0.21.0",
+    "react-native-safe-area-context": "^5.6.2",
+    "react-native-screens": "^4.18.0",
+    "react-native-svg": "^15.15.1",
     "react-redux": "^9.2.0",
     "socket.io-client": "^4.8.1"
   },
-  "private": true
+  "name": "frontend",
+  "version": "1.0.0",
+  "scripts": {
+    "android": "expo run:android",
+    "ios": "expo run:ios"
+  }
 }

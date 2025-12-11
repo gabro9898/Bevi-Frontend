@@ -1,20 +1,21 @@
 // src/screens/ProfileScreen/ProfileScreen.js
 // Schermata profilo utente con statistiche reali
-// ✅ AGGIORNATO: Rimosso pulsante Analytics (ora nella tab bar)
+// ✅ FIX: SafeArea Android
 
 import React, { useEffect, useState } from 'react';
 import { 
   View, 
   Text, 
   StyleSheet, 
-  SafeAreaView,
   TouchableOpacity,
   ScrollView,
   RefreshControl,
   ActivityIndicator,
   Image,
   Alert,
+  StatusBar,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useDispatch, useSelector } from 'react-redux';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
@@ -49,6 +50,7 @@ const MenuButton = ({ icon, label, onPress, color = colors.textPrimary, rightIco
 );
 
 const ProfileScreen = () => {
+  const insets = useSafeAreaInsets();
   const dispatch = useDispatch();
   const navigation = useNavigation();
   const currentUser = useSelector(selectCurrentUser);
@@ -159,17 +161,18 @@ const ProfileScreen = () => {
 
   if (isLoading && !user?.username) {
     return (
-      <SafeAreaView style={styles.container}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Caricamento profilo...</Text>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
       <ScrollView
         showsVerticalScrollIndicator={false}
         refreshControl={
@@ -311,7 +314,7 @@ const ProfileScreen = () => {
           </View>
         </View>
       )}
-    </SafeAreaView>
+    </View>
   );
 };
 
