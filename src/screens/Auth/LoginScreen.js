@@ -1,5 +1,5 @@
 // src/screens/Auth/LoginScreen.js
-// Schermata di login con Google Sign In
+// Schermata di login con Google Sign In e Apple Sign In
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -17,11 +17,12 @@ import {
 import { useDispatch } from 'react-redux';
 import { Ionicons } from '@expo/vector-icons';
 import * as Google from 'expo-auth-session/providers/google';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import * as WebBrowser from 'expo-web-browser';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
 import { setCredentials } from '../../store/slices/authSlice';
 import { saveTokens } from '../../api/apiClient';
-import { useLoginMutation, useGoogleAuthMutation } from '../../api/beviApi';
+import { useLoginMutation, useGoogleAuthMutation, useAppleAuthMutation } from '../../api/beviApi';
 
 // Necessario per chiudere il browser dopo il login
 WebBrowser.maybeCompleteAuthSession();
@@ -38,19 +39,29 @@ const LoginScreen = ({ navigation }) => {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const [isAppleLoading, setIsAppleLoading] = useState(false);
+  const [isAppleAvailable, setIsAppleAvailable] = useState(false);
 
   // Mutations
   const [login, { isLoading }] = useLoginMutation();
   const [googleAuth] = useGoogleAuthMutation();
+  const [appleAuth] = useAppleAuthMutation();
 
-  // Configurazione Google Sign In - usa useIdTokenAuthRequest per ottenere idToken
+  // Configurazione Google Sign In
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
     clientId: GOOGLE_WEB_CLIENT_ID,
     iosClientId: GOOGLE_IOS_CLIENT_ID,
     androidClientId: GOOGLE_ANDROID_CLIENT_ID,
   });
 
-  console.log('Redirect URI:', request?.redirectUri);
+  // Verifica disponibilità Apple Sign In
+  useEffect(() => {
+    const checkAppleAvailability = async () => {
+      const isAvailable = await AppleAuthentication.isAvailableAsync();
+      setIsAppleAvailable(isAvailable);
+    };
+    checkAppleAvailability();
+  }, []);
 
   // Gestisci la risposta di Google
   useEffect(() => {
@@ -58,23 +69,19 @@ const LoginScreen = ({ navigation }) => {
   }, [response]);
 
   const handleGoogleResponse = async () => {
-    console.log('Response type:', response?.type);
-    console.log('Response params:', response?.params);
-    console.log('Response authentication:', response?.authentication);
-    
     if (response?.type === 'success') {
       setIsGoogleLoading(true);
       
-      // Con useIdTokenAuthRequest, l'idToken può essere in diversi posti
-      const idToken = response.params?.id_token || response.authentication?.idToken;
-      
-      console.log('idToken trovato:', idToken ? 'SÌ' : 'NO');
+      const idToken = 
+        response.params?.id_token ||
+        response.authentication?.idToken ||
+        response.params?.idToken ||
+        response.authentication?.accessToken;
       
       if (idToken) {
         await handleGoogleLogin(idToken);
       } else {
-        console.log('Full response:', JSON.stringify(response, null, 2));
-        Alert.alert('Errore', 'Impossibile ottenere il token da Google');
+        Alert.alert('Errore', 'Token non trovato nella risposta Google');
         setIsGoogleLoading(false);
       }
     } else if (response?.type === 'error') {
@@ -107,10 +114,9 @@ const LoginScreen = ({ navigation }) => {
     }
   };
 
-  // Login con Google usando idToken
+  // Login con Google
   const handleGoogleLogin = async (idToken) => {
     try {
-      console.log('Invio idToken al backend...');
       const result = await googleAuth({ idToken }).unwrap();
       const data = result.data;
       await saveTokens(data.accessToken, data.refreshToken);
@@ -133,7 +139,7 @@ const LoginScreen = ({ navigation }) => {
     }
   };
 
-  // Avvia il flusso Google Sign In
+  // Avvia Google Sign In
   const handleGooglePress = async () => {
     if (!request) {
       Alert.alert('Errore', 'Google Sign In non è pronto. Riprova.');
@@ -148,7 +154,53 @@ const LoginScreen = ({ navigation }) => {
     }
   };
 
-  const isAnyLoading = isLoading || isGoogleLoading;
+  // Login con Apple
+  const handleAppleLogin = async () => {
+    setIsAppleLoading(true);
+    
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+
+      console.log('Apple credential ricevute');
+
+      // Invia al backend
+      const result = await appleAuth({
+        identityToken: credential.identityToken,
+        authorizationCode: credential.authorizationCode,
+        fullName: credential.fullName,
+      }).unwrap();
+
+      const data = result.data;
+      await saveTokens(data.accessToken, data.refreshToken);
+      dispatch(setCredentials({
+        user: data.user,
+        token: data.accessToken,
+      }));
+
+      if (data.isNewUser) {
+        console.log('Nuovo utente registrato con Apple!');
+      }
+    } catch (error) {
+      if (error.code === 'ERR_REQUEST_CANCELED') {
+        console.log('Apple Sign In annullato dall\'utente');
+      } else {
+        console.log('Errore Apple login:', error);
+        Alert.alert(
+          'Errore',
+          error.data?.message || 'Errore durante il login con Apple'
+        );
+      }
+    } finally {
+      setIsAppleLoading(false);
+    }
+  };
+
+  const isAnyLoading = isLoading || isGoogleLoading || isAppleLoading;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -225,8 +277,9 @@ const LoginScreen = ({ navigation }) => {
               <View style={styles.dividerLine} />
             </View>
 
+            {/* Google Sign In */}
             <TouchableOpacity 
-              style={[styles.googleButton, isAnyLoading && styles.buttonDisabled]}
+              style={[styles.socialButton, styles.googleButton, isAnyLoading && styles.buttonDisabled]}
               onPress={handleGooglePress}
               disabled={!request || isAnyLoading}
             >
@@ -234,11 +287,29 @@ const LoginScreen = ({ navigation }) => {
                 <ActivityIndicator color={colors.textPrimary} />
               ) : (
                 <>
-                  <Ionicons name="logo-google" size={20} color="#DB4437" style={styles.googleIcon} />
+                  <Ionicons name="logo-google" size={20} color="#DB4437" style={styles.socialIcon} />
                   <Text style={styles.googleButtonText}>Continua con Google</Text>
                 </>
               )}
             </TouchableOpacity>
+
+            {/* Apple Sign In - Solo su iOS */}
+            {Platform.OS === 'ios' && isAppleAvailable && (
+              <TouchableOpacity 
+                style={[styles.socialButton, styles.appleButton, isAnyLoading && styles.buttonDisabled]}
+                onPress={handleAppleLogin}
+                disabled={isAnyLoading}
+              >
+                {isAppleLoading ? (
+                  <ActivityIndicator color={colors.white} />
+                ) : (
+                  <>
+                    <Ionicons name="logo-apple" size={20} color={colors.white} style={styles.socialIcon} />
+                    <Text style={styles.appleButtonText}>Continua con Apple</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            )}
           </View>
 
           <View style={styles.footer}>
@@ -336,23 +407,33 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginHorizontal: spacing.md,
   },
-  googleButton: {
+  socialButton: {
     flexDirection: 'row',
-    backgroundColor: colors.white,
     borderRadius: borderRadius.md,
     height: 56,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: colors.lightGray,
+    marginBottom: spacing.md,
     ...shadows.small,
   },
-  googleIcon: {
+  googleButton: {
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.lightGray,
+  },
+  appleButton: {
+    backgroundColor: '#000000',
+  },
+  socialIcon: {
     marginRight: spacing.sm,
   },
   googleButtonText: {
     ...typography.button,
     color: colors.textPrimary,
+  },
+  appleButtonText: {
+    ...typography.button,
+    color: colors.white,
   },
   footer: {
     flexDirection: 'row',

@@ -1,6 +1,6 @@
 // src/api/beviApi.js
 // RTK Query API - Tutti gli endpoints del backend Bevi
-// ✅ VERSIONE CON UPLOAD CLOUDINARY
+// ✅ VERSIONE CON UPLOAD CLOUDINARY + APPLE AUTH
 
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -73,12 +73,20 @@ export const beviApi = createApi({
     }),
 
     googleAuth: builder.mutation({
-  query: (credentials) => ({
-    url: '/auth/google',
-    method: 'POST',
-    body: credentials,
-  }),
-}),
+      query: (credentials) => ({
+        url: '/auth/google',
+        method: 'POST',
+        body: credentials,
+      }),
+    }),
+
+    appleAuth: builder.mutation({
+      query: (credentials) => ({
+        url: '/auth/apple',
+        method: 'POST',
+        body: credentials,
+      }),
+    }),
 
     getMe: builder.query({
       query: () => '/auth/me',
@@ -160,17 +168,16 @@ export const beviApi = createApi({
     }),
 
     // Elimina account
-deleteMyAccount: builder.mutation({
-  query: ({ password, confirmation }) => ({
-    url: '/users/account',
-    method: 'DELETE',
-    body: { password, confirmation },
-  }),
-  invalidatesTags: ['User'],
-}),
+    deleteMyAccount: builder.mutation({
+      query: ({ password, confirmation }) => ({
+        url: '/users/account',
+        method: 'DELETE',
+        body: { password, confirmation },
+      }),
+      invalidatesTags: ['User'],
+    }),
 
     // ==================== UPLOAD IMMAGINI (CLOUDINARY) ====================
-    // Usa endpoint generico: POST /api/upload con type: "profile" | "group" | "drink"
 
     // Upload avatar profilo
     uploadAvatar: builder.mutation({
@@ -290,16 +297,11 @@ deleteMyAccount: builder.mutation({
 
     // ==================== DRINK LOGS ====================
 
-    // ✅ AGGIORNATO: Ora supporta campo "image" per upload diretto
     createDrinkLog: builder.mutation({
       query: (drinkLogData) => ({
         url: '/drink-logs',
         method: 'POST',
         body: drinkLogData,
-        // drinkLogData può contenere:
-        // - drinkId: string (obbligatorio)
-        // - image: string (base64, opzionale - verrà uploadato su Cloudinary)
-        // - photoUrl + photoPublicId: se l'immagine è già stata uploadata
       }),
       invalidatesTags: ['DrinkLogs', 'Leaderboard', 'User', 'Analytics', 'Cooldown'],
     }),
@@ -405,7 +407,7 @@ deleteMyAccount: builder.mutation({
       query: (id) => `/groups/${id}/invite`,
     }),
 
-        toggleMuteGroup: builder.mutation({
+    toggleMuteGroup: builder.mutation({
       query: (groupId) => ({
         url: `/groups/${groupId}/mute`,
         method: 'PUT',
@@ -449,9 +451,7 @@ deleteMyAccount: builder.mutation({
     getGroupMessages: builder.query({
       query: (groupId) => `/messages/group/${groupId}`,
       providesTags: (result, error, groupId) => [{ type: 'Messages', id: groupId }],
-      // ✅ FIX: Disabilita refetch automatico per i messaggi
-      // I nuovi messaggi arrivano via WebSocket!
-      keepUnusedDataFor: 300, // Mantieni in cache per 5 minuti
+      keepUnusedDataFor: 300,
     }),
 
     sendGroupMessage: builder.mutation({
@@ -460,10 +460,6 @@ deleteMyAccount: builder.mutation({
         method: 'POST',
         body: { content: message },
       }),
-      // ✅ FIX CRITICO: RIMOSSO invalidatesTags!
-      // Prima c'era: invalidatesTags: (result, error, { groupId }) => [{ type: 'Messages', id: groupId }],
-      // Questo causava un refetch che sovrascriveva i messaggi WebSocket!
-      // I messaggi arrivano via WebSocket, non serve invalidare la cache.
     }),
 
     deleteGroupMessage: builder.mutation({
@@ -471,8 +467,6 @@ deleteMyAccount: builder.mutation({
         url: `/messages/${messageId}`,
         method: 'DELETE',
       }),
-      // ✅ FIX: Anche qui rimuoviamo invalidatesTags
-      // L'eliminazione viene notificata via WebSocket
     }),
 
     markMessagesAsRead: builder.mutation({
@@ -620,6 +614,7 @@ export const {
   useGetMeQuery,
   useLogoutMutation,
   useGoogleAuthMutation,
+  useAppleAuthMutation,
   useForgotPasswordMutation,
   useResetPasswordMutation,
   useChangePasswordMutation,
@@ -680,7 +675,7 @@ export const {
   useGetGroupInviteLinkQuery,
   useUpdateGroupChallengeSettingsMutation,
   usePublishGroupLeaderboardMutation,
-    useToggleMuteGroupMutation,
+  useToggleMuteGroupMutation,
   useTogglePinGroupMutation,
   
   // Messages
@@ -723,5 +718,4 @@ export const {
 } = beviApi;
 
 // ==================== RESET CACHE FUNCTION ====================
-// Chiama questa funzione al logout per pulire tutta la cache
 export const resetApiCache = () => beviApi.util.resetApiState();
