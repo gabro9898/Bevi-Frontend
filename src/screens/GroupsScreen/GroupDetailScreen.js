@@ -1,8 +1,7 @@
 // src/screens/GroupsScreen/GroupDetailScreen.js
-// Schermata dettaglio gruppo con tabs: Chat, Ruota, Classifica
-// ✅ FIX: SafeArea Android con useSafeAreaInsets()
+// ✅ FIX: Tab persistenti - non smontano quando si cambia tab
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -58,32 +57,21 @@ const GroupDetailScreen = ({ route, navigation }) => {
   const { groupId, groupName } = route.params;
   const [activeTab, setActiveTab] = useState('chat');
 
-  // ==================== FIX: Ottieni utente corrente ====================
-  // Metodo 1: Da Redux store
+  // ==================== OTTIENI UTENTE CORRENTE ====================
   const authState = useSelector((state) => state.auth);
   const currentUserFromRedux = authState?.user;
   
-  // Metodo 2: Da API (fallback se Redux è vuoto)
   const { data: meData } = useGetMeQuery(undefined, {
-    skip: !!currentUserFromRedux?.id, // Salta se già abbiamo l'utente
+    skip: !!currentUserFromRedux?.id,
   });
   
-  // Estrai utente da API response
   const currentUserFromApi = meData?.data?.user || meData?.data || meData?.user || meData;
   
-  // Usa quello disponibile
-  const currentUser = currentUserFromRedux?.id ? currentUserFromRedux : currentUserFromApi;
-  const currentUserId = currentUser?.id;
-
-  // ==================== DEBUG LOGS ====================
-  useEffect(() => {
-    console.log('🔴🔴🔴 AUTH DEBUG 🔴🔴🔴');
-    console.log('authState:', JSON.stringify(authState, null, 2));
-    console.log('currentUserFromRedux:', currentUserFromRedux);
-    console.log('currentUserFromApi:', currentUserFromApi);
-    console.log('FINAL currentUserId:', currentUserId);
-    console.log('🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴🔴');
-  }, [authState, currentUserFromRedux, currentUserFromApi, currentUserId]);
+  // ✅ Memoizza currentUserId per evitare re-render inutili
+  const currentUserId = useMemo(() => {
+    const user = currentUserFromRedux?.id ? currentUserFromRedux : currentUserFromApi;
+    return user?.id;
+  }, [currentUserFromRedux?.id, currentUserFromApi?.id]);
 
   // API hooks
   const { data: groupData, isLoading: groupLoading } = useGetGroupByIdQuery(groupId);
@@ -118,20 +106,6 @@ const GroupDetailScreen = ({ route, navigation }) => {
 
     const groupDisplayName = group?.name || groupName;
     await shareGroup(inviteCode, groupDisplayName, groupId);
-  };
-
-  // Render contenuto tab
-  const renderTabContent = () => {
-    switch (activeTab) {
-      case 'chat':
-        return <GroupChat groupId={groupId} currentUserId={currentUserId} />;
-      case 'wheel':
-        return <GroupWheel groupId={groupId} currentUserId={currentUserId} />;
-      case 'leaderboard':
-        return <GroupLeaderboard groupId={groupId} currentUserId={currentUserId} />;
-      default:
-        return null;
-    }
   };
 
   const isLoading = groupLoading && !group;
@@ -213,9 +187,35 @@ const GroupDetailScreen = ({ route, navigation }) => {
         ))}
       </View>
 
-      {/* Tab Content */}
+      {/* ✅ Tab Content - TUTTI RENDERIZZATI, solo uno visibile */}
       <View style={styles.content}>
-        {renderTabContent()}
+        {/* Chat Tab - sempre montato */}
+        <View style={[
+          styles.tabContent,
+          activeTab !== 'chat' && styles.tabContentHidden
+        ]}>
+          <GroupChat groupId={groupId} currentUserId={currentUserId} />
+        </View>
+
+        {/* Wheel Tab - renderizzato solo quando visitato almeno una volta */}
+        <View style={[
+          styles.tabContent,
+          activeTab !== 'wheel' && styles.tabContentHidden
+        ]}>
+          {activeTab === 'wheel' && (
+            <GroupWheel groupId={groupId} currentUserId={currentUserId} />
+          )}
+        </View>
+
+        {/* Leaderboard Tab - renderizzato solo quando visitato almeno una volta */}
+        <View style={[
+          styles.tabContent,
+          activeTab !== 'leaderboard' && styles.tabContentHidden
+        ]}>
+          {activeTab === 'leaderboard' && (
+            <GroupLeaderboard groupId={groupId} currentUserId={currentUserId} />
+          )}
+        </View>
       </View>
     </View>
   );
@@ -251,13 +251,11 @@ const styles = StyleSheet.create({
     padding: spacing.sm,
     marginRight: spacing.xs,
   },
-  // Container con avatar e info
   headerContent: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
   },
-  // Avatar nell'header
   headerAvatar: {
     width: 40,
     height: 40,
@@ -327,9 +325,19 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Content
+  // ✅ Content con tab persistenti
   content: {
     flex: 1,
+  },
+  tabContent: {
+    flex: 1,
+  },
+  tabContentHidden: {
+    position: 'absolute',
+    width: 0,
+    height: 0,
+    overflow: 'hidden',
+    opacity: 0,
   },
 });
 
