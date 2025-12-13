@@ -1,5 +1,5 @@
 // src/screens/Auth/LoginScreen.js
-// Schermata di login con Google Sign In e Apple Sign In
+// Schermata di login con Google Sign In (nativo su Android, expo-auth-session su iOS) e Apple Sign In
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -16,7 +16,6 @@ import {
 } from 'react-native';
 import { useDispatch } from 'react-redux';
 import { Ionicons } from '@expo/vector-icons';
-import * as Google from 'expo-auth-session/providers/google';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as WebBrowser from 'expo-web-browser';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
@@ -24,13 +23,23 @@ import { setCredentials } from '../../store/slices/authSlice';
 import { saveTokens } from '../../api/apiClient';
 import { useLoginMutation, useGoogleAuthMutation, useAppleAuthMutation } from '../../api/beviApi';
 
-// Necessario per chiudere il browser dopo il login
+// iOS: expo-auth-session
+import * as Google from 'expo-auth-session/providers/google';
+
+// Android: @react-native-google-signin/google-signin
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
+
+// Necessario per chiudere il browser dopo il login (iOS)
 WebBrowser.maybeCompleteAuthSession();
 
-// Google Client IDs
-const GOOGLE_WEB_CLIENT_ID = '537432298054-mp7feimem9r1qrg6iqifbuortu3jr3bt.apps.googleusercontent.com';
+// Google Client IDs - SEPARATI PER PIATTAFORMA
+// iOS usa il progetto "Bevi APP" (537432298054)
+// Android usa il progetto Firebase "bevi-35193" (980915796532)
+const GOOGLE_WEB_CLIENT_ID_IOS = '537432298054-mp7feimem9r1qrg6iqifbuortu3jr3bt.apps.googleusercontent.com';
+const GOOGLE_WEB_CLIENT_ID_ANDROID = '980915796532-3dapiiv6c32ahrs2id55m343gd50buiv.apps.googleusercontent.com';
 const GOOGLE_IOS_CLIENT_ID = '537432298054-f1psq6ecan828mkt26qprau7vatf57j9.apps.googleusercontent.com';
-const GOOGLE_ANDROID_CLIENT_ID = '537432298054-jqin4dj11fitbosk04a53pktntofqud3.apps.googleusercontent.com';
+const GOOGLE_ANDROID_CLIENT_ID = '980915796532-er3gjca2ojkkkuajlam7d8qs46r7ri4d.apps.googleusercontent.com';
+
 
 const LoginScreen = ({ navigation }) => {
   const dispatch = useDispatch();
@@ -41,18 +50,38 @@ const LoginScreen = ({ navigation }) => {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isAppleLoading, setIsAppleLoading] = useState(false);
   const [isAppleAvailable, setIsAppleAvailable] = useState(false);
+  const [isGoogleReady, setIsGoogleReady] = useState(false);
 
   // Mutations
   const [login, { isLoading }] = useLoginMutation();
   const [googleAuth] = useGoogleAuthMutation();
   const [appleAuth] = useAppleAuthMutation();
 
-  // Configurazione Google Sign In
+  // ============ iOS: expo-auth-session ============
   const [request, response, promptAsync] = Google.useIdTokenAuthRequest({
-    clientId: GOOGLE_WEB_CLIENT_ID,
+    clientId: GOOGLE_WEB_CLIENT_ID_IOS,
     iosClientId: GOOGLE_IOS_CLIENT_ID,
     androidClientId: GOOGLE_ANDROID_CLIENT_ID,
   });
+
+  // ============ Android: Configura Google Sign In nativo ============
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      GoogleSignin.configure({
+        webClientId: GOOGLE_WEB_CLIENT_ID_ANDROID,
+        offlineAccess: true,
+      });
+      setIsGoogleReady(true);
+      console.log('Google Sign In configurato per Android (nativo)');
+    }
+  }, []);
+
+  // iOS: imposta isGoogleReady quando la request è pronta
+  useEffect(() => {
+    if (Platform.OS === 'ios' && request) {
+      setIsGoogleReady(true);
+    }
+  }, [request]);
 
   // Verifica disponibilità Apple Sign In
   useEffect(() => {
@@ -63,12 +92,14 @@ const LoginScreen = ({ navigation }) => {
     checkAppleAvailability();
   }, []);
 
-  // Gestisci la risposta di Google
+  // ============ iOS: Gestisci la risposta di Google ============
   useEffect(() => {
-    handleGoogleResponse();
+    if (Platform.OS === 'ios') {
+      handleIOSGoogleResponse();
+    }
   }, [response]);
 
-  const handleGoogleResponse = async () => {
+  const handleIOSGoogleResponse = async () => {
     if (response?.type === 'success') {
       setIsGoogleLoading(true);
       
@@ -85,7 +116,7 @@ const LoginScreen = ({ navigation }) => {
         setIsGoogleLoading(false);
       }
     } else if (response?.type === 'error') {
-      console.log('Google Auth Error:', response.error);
+      console.log('Google Auth Error (iOS):', response.error);
       Alert.alert('Errore', 'Errore durante il login con Google');
     }
   };
@@ -114,9 +145,10 @@ const LoginScreen = ({ navigation }) => {
     }
   };
 
-  // Login con Google
+  // Invia idToken al backend (usato sia da iOS che Android)
   const handleGoogleLogin = async (idToken) => {
     try {
+      console.log('Invio idToken al backend...');
       const result = await googleAuth({ idToken }).unwrap();
       const data = result.data;
       await saveTokens(data.accessToken, data.refreshToken);
@@ -139,8 +171,61 @@ const LoginScreen = ({ navigation }) => {
     }
   };
 
-  // Avvia Google Sign In
+  // ============ Google Sign In Handler (Platform-specific) ============
   const handleGooglePress = async () => {
+    if (Platform.OS === 'android') {
+      await handleAndroidGoogleSignIn();
+    } else {
+      await handleIOSGoogleSignIn();
+    }
+  };
+
+  // ============ Android: usa @react-native-google-signin (nativo) ============
+  const handleAndroidGoogleSignIn = async () => {
+    setIsGoogleLoading(true);
+
+    try {
+      // Verifica Play Services
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+
+      // Sign in
+      const signInResult = await GoogleSignin.signIn();
+      
+      console.log('Google Sign In result (Android):', JSON.stringify(signInResult, null, 2));
+
+      // Estrai idToken - la struttura può variare tra versioni
+      const idToken = signInResult.data?.idToken || signInResult.idToken;
+
+      if (!idToken) {
+        console.error('idToken non trovato nella risposta:', signInResult);
+        Alert.alert('Errore', 'Token non trovato. Riprova.');
+        setIsGoogleLoading(false);
+        return;
+      }
+
+      console.log('idToken ottenuto, lunghezza:', idToken.length);
+
+      // Invia al backend
+      await handleGoogleLogin(idToken);
+
+    } catch (error) {
+      console.error('Errore Google Sign In (Android):', error);
+      
+      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+        console.log('Login Google annullato dall\'utente');
+      } else if (error.code === statusCodes.IN_PROGRESS) {
+        Alert.alert('Attendere', 'Login già in corso...');
+      } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+        Alert.alert('Errore', 'Google Play Services non disponibile');
+      } else {
+        Alert.alert('Errore', error.message || 'Errore durante il login con Google');
+      }
+      setIsGoogleLoading(false);
+    }
+  };
+
+  // ============ iOS: usa expo-auth-session ============
+  const handleIOSGoogleSignIn = async () => {
     if (!request) {
       Alert.alert('Errore', 'Google Sign In non è pronto. Riprova.');
       return;
@@ -149,7 +234,7 @@ const LoginScreen = ({ navigation }) => {
     try {
       await promptAsync();
     } catch (error) {
-      console.log('Errore promptAsync:', error);
+      console.log('Errore promptAsync (iOS):', error);
       Alert.alert('Errore', 'Impossibile avviare il login con Google');
     }
   };
@@ -201,6 +286,9 @@ const LoginScreen = ({ navigation }) => {
   };
 
   const isAnyLoading = isLoading || isGoogleLoading || isAppleLoading;
+
+  // Per iOS usa request, per Android usa isGoogleReady
+  const isGoogleDisabled = Platform.OS === 'ios' ? !request : !isGoogleReady;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -281,7 +369,7 @@ const LoginScreen = ({ navigation }) => {
             <TouchableOpacity 
               style={[styles.socialButton, styles.googleButton, isAnyLoading && styles.buttonDisabled]}
               onPress={handleGooglePress}
-              disabled={!request || isAnyLoading}
+              disabled={isGoogleDisabled || isAnyLoading}
             >
               {isGoogleLoading ? (
                 <ActivityIndicator color={colors.textPrimary} />

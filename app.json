@@ -63,7 +63,8 @@
           "iosAppId": "ca-app-pub-2321153105236925~2130948667",
           "userTrackingUsageDescription": "This identifier will be used to deliver personalized ads to you."
         }
-      ]
+      ],
+      "@react-native-google-signin/google-signin"
     ],
     "extra": {
       "eas": {
@@ -72,6 +73,12 @@
       "privacyPolicyUrl": "https://gabro9898.github.io/bevi-docs/privacy-policy.html",
       "termsOfServiceUrl": "https://gabro9898.github.io/bevi-docs/terms-of-service.html"
     },
-    "owner": "gabro9898"
+    "owner": "gabro9898",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/c6680460-e950-41a1-a19b-eb338329c6ea"
+    }
   }
 }

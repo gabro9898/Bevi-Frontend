@@ -12,7 +12,20 @@
           "package_name": "com.gabro9898.bevi"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "980915796532-er3gjca2ojkkkuajlam7d8qs46r7ri4d.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.gabro9898.bevi",
+            "certificate_hash": "fd1b80c751bf0dc3e88f7f7feaab0f6519ca5e86"
+          }
+        },
+        {
+          "client_id": "980915796532-3dapiiv6c32ahrs2id55m343gd50buiv.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyCZvrzYk6ZB4a9PFU8nhEr9TD81cyVQ52k"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "980915796532-3dapiiv6c32ahrs2id55m343gd50buiv.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

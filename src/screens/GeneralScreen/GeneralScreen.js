@@ -1,8 +1,8 @@
 // src/screens/GeneralScreen/GeneralScreen.js
 // Schermata principale con classifiche
-// ✅ FIX: SafeArea Android
+// ✅ FIX: Loading infinito risolto + rotellina che non si blocca
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -14,7 +14,6 @@ import {
   RefreshControl,
   ActivityIndicator,
   Image,
-  Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -81,7 +80,6 @@ const LeaderboardItem = ({ item, index, showSeparator }) => {
   const isTopThree = (item.rank || index + 1) <= 3;
   const medals = ['🥇', '🥈', '🥉'];
   
-  // Estrai i dati - user è un oggetto dentro item
   const user = item.user || {};
   const score = item.score || 0;
   const rank = item.rank || index + 1;
@@ -100,7 +98,6 @@ const LeaderboardItem = ({ item, index, showSeparator }) => {
         isTopThree && styles.leaderboardItemTop,
         item.isMe && styles.leaderboardItemMe
       ]}>
-        {/* Posizione */}
         <View style={styles.positionContainer}>
           {isTopThree ? (
             <Text style={styles.medal}>{medals[rank - 1]}</Text>
@@ -109,7 +106,6 @@ const LeaderboardItem = ({ item, index, showSeparator }) => {
           )}
         </View>
         
-        {/* Avatar */}
         <View style={[styles.avatar, isTopThree && styles.avatarTop]}>
           {user.profilePhoto ? (
             <Image source={{ uri: user.profilePhoto }} style={styles.avatarImage} />
@@ -118,7 +114,6 @@ const LeaderboardItem = ({ item, index, showSeparator }) => {
           )}
         </View>
         
-        {/* Info utente */}
         <View style={styles.userInfo}>
           <View style={styles.usernameRow}>
             <Text style={styles.username}>{user.nickname || user.username || 'Utente'}</Text>
@@ -127,7 +122,6 @@ const LeaderboardItem = ({ item, index, showSeparator }) => {
           <Text style={styles.drinks}>@{user.username} • Liv. {user.level || 1}</Text>
         </View>
         
-        {/* Punteggio */}
         <View style={styles.scoreContainer}>
           <Text style={[styles.score, isTopThree && styles.scoreTop]}>
             {score}
@@ -145,10 +139,14 @@ const GeneralScreen = () => {
   const [activeCategory, setActiveCategory] = useState('all');
   const [activeTimeFilter, setActiveTimeFilter] = useState('daily');
   const [notificationsModalVisible, setNotificationsModalVisible] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  
+  // ✅ FIX: Traccia se abbiamo già fatto il primo caricamento
+  const hasLoadedOnce = useRef(false);
 
   // Query conteggio notifiche non lette
   const { data: unreadData } = useGetUnreadNotificationCountQuery(undefined, {
-    pollingInterval: 30000, // Aggiorna ogni 30 secondi
+    pollingInterval: 30000,
   });
   const unreadCount = unreadData?.data?.unreadCount || 0;
 
@@ -156,10 +154,11 @@ const GeneralScreen = () => {
   const selectedCategory = DRINK_CATEGORIES.find(c => c.id === activeCategory);
   const backendCategory = selectedCategory?.backendCategory;
 
-  // Query per le classifiche globali (quando "Tutti" è selezionato)
+  // Query per le classifiche globali
   const { 
     data: dailyData, 
-    isLoading: dailyLoading, 
+    isLoading: dailyLoading,
+    isFetching: dailyFetching,
     refetch: refetchDaily 
   } = useGetDailyLeaderboardQuery(undefined, {
     skip: activeCategory !== 'all' || activeTimeFilter !== 'daily'
@@ -167,7 +166,8 @@ const GeneralScreen = () => {
   
   const { 
     data: weeklyData, 
-    isLoading: weeklyLoading, 
+    isLoading: weeklyLoading,
+    isFetching: weeklyFetching,
     refetch: refetchWeekly 
   } = useGetWeeklyLeaderboardQuery(undefined, {
     skip: activeCategory !== 'all' || activeTimeFilter !== 'weekly'
@@ -175,16 +175,18 @@ const GeneralScreen = () => {
   
   const { 
     data: monthlyData, 
-    isLoading: monthlyLoading, 
+    isLoading: monthlyLoading,
+    isFetching: monthlyFetching,
     refetch: refetchMonthly 
   } = useGetMonthlyLeaderboardQuery(undefined, {
     skip: activeCategory !== 'all' || activeTimeFilter !== 'monthly'
   });
 
-  // Query per classifica per categoria (quando una categoria specifica è selezionata)
+  // Query per classifica per categoria
   const {
     data: categoryData,
     isLoading: categoryLoading,
+    isFetching: categoryFetching,
     refetch: refetchCategory
   } = useGetCategoryLeaderboardQuery(
     { category: backendCategory, period: activeTimeFilter },
@@ -193,7 +195,6 @@ const GeneralScreen = () => {
 
   // Seleziona i dati in base ai filtri attivi
   const getCurrentData = () => {
-    // Se è selezionata una categoria specifica
     if (backendCategory) {
       return {
         leaderboard: categoryData?.data?.leaderboard || [],
@@ -201,7 +202,6 @@ const GeneralScreen = () => {
       };
     }
     
-    // Altrimenti usa le classifiche globali
     let rawData;
     switch (activeTimeFilter) {
       case 'daily':
@@ -223,31 +223,53 @@ const GeneralScreen = () => {
     };
   };
 
-  const isLoading = backendCategory 
-    ? categoryLoading 
-    : (dailyLoading || weeklyLoading || monthlyLoading);
+  // ✅ FIX: isLoading = primo caricamento, isFetching = include refetch
+  const getLoadingState = () => {
+    if (backendCategory) {
+      return { isLoading: categoryLoading, isFetching: categoryFetching };
+    }
     
+    switch (activeTimeFilter) {
+      case 'daily': 
+        return { isLoading: dailyLoading, isFetching: dailyFetching };
+      case 'weekly': 
+        return { isLoading: weeklyLoading, isFetching: weeklyFetching };
+      case 'monthly': 
+        return { isLoading: monthlyLoading, isFetching: monthlyFetching };
+      default: 
+        return { isLoading: false, isFetching: false };
+    }
+  };
+
+  const { isLoading, isFetching } = getLoadingState();
   const { leaderboard, myPosition } = getCurrentData();
 
-  // Prepara i dati da mostrare: primi 7 + la mia posizione se non sono nei primi 7
+  // ✅ FIX: Marca come caricato quando abbiamo dati
+  useEffect(() => {
+    if (leaderboard.length > 0) {
+      hasLoadedOnce.current = true;
+    }
+  }, [leaderboard.length]);
+
+  // ✅ FIX: Mostra loader SOLO al primissimo caricamento in assoluto
+  // Dopo il primo caricamento, mai più mostrare il loader a schermo intero
+  const showLoading = isLoading && !hasLoadedOnce.current && leaderboard.length === 0;
+
+  // Prepara i dati da mostrare
   const getDisplayData = () => {
     const top7 = leaderboard.slice(0, 7);
-    
-    // Controlla se sono già nei primi 7
     const amInTop7 = top7.some(item => item.isMe);
     
     if (amInTop7 || !myPosition) {
       return { displayList: top7, showMyPosition: false };
     }
     
-    // Trova me nella lista completa
     const myEntry = leaderboard.find(item => item.isMe);
     
     if (myEntry) {
       return { displayList: top7, showMyPosition: true, myEntry };
     }
     
-    // Se non sono nella lista, crea un entry dalla myPosition
     if (myPosition && myPosition.rank > 7) {
       return { 
         displayList: top7, 
@@ -256,7 +278,7 @@ const GeneralScreen = () => {
           rank: myPosition.rank,
           score: myPosition.score,
           isMe: true,
-          user: null // Verrà mostrato come "Tu"
+          user: null
         }
       };
     }
@@ -267,16 +289,30 @@ const GeneralScreen = () => {
   const { displayList, showMyPosition, myEntry } = getDisplayData();
 
   // Pull to refresh
-  const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    if (backendCategory) {
-      await refetchCategory();
-    } else {
-      await Promise.all([refetchDaily(), refetchWeekly(), refetchMonthly()]);
+    try {
+      if (backendCategory) {
+        await refetchCategory();
+      } else {
+        switch (activeTimeFilter) {
+          case 'daily':
+            await refetchDaily();
+            break;
+          case 'weekly':
+            await refetchWeekly();
+            break;
+          case 'monthly':
+            await refetchMonthly();
+            break;
+        }
+      }
+    } catch (error) {
+      console.log('Errore refresh classifica:', error);
+    } finally {
+      setRefreshing(false);
     }
-    setRefreshing(false);
-  }, [backendCategory, refetchCategory, refetchDaily, refetchWeekly, refetchMonthly]);
+  }, [backendCategory, activeTimeFilter, refetchCategory, refetchDaily, refetchWeekly, refetchMonthly]);
 
   // Prepara i dati per la FlatList
   const listData = showMyPosition && myEntry 
@@ -305,7 +341,7 @@ const GeneralScreen = () => {
         </TouchableOpacity>
       </View>
 
-      {/* Categorie bevande (scroll orizzontale) */}
+      {/* Categorie bevande */}
       <View style={styles.categoriesContainer}>
         <ScrollView 
           horizontal 
@@ -336,7 +372,7 @@ const GeneralScreen = () => {
       </View>
 
       {/* Classifica */}
-      {isLoading ? (
+      {showLoading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Caricamento classifica...</Text>
@@ -352,10 +388,13 @@ const GeneralScreen = () => {
               showSeparator={item.showSeparator}
             />
           )}
-          contentContainerStyle={styles.leaderboardList}
+          contentContainerStyle={[
+            styles.leaderboardList,
+            listData.length === 0 && styles.emptyListContent
+          ]}
           refreshControl={
             <RefreshControl
-              refreshing={refreshing}
+              refreshing={refreshing || (isFetching && !isLoading)}
               onRefresh={onRefresh}
               colors={[colors.primary]}
               tintColor={colors.primary}
@@ -498,6 +537,9 @@ const styles = StyleSheet.create({
   // Classifica
   leaderboardList: {
     padding: spacing.md,
+  },
+  emptyListContent: {
+    flexGrow: 1,
   },
   leaderboardItem: {
     flexDirection: 'row',
