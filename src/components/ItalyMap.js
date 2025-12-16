@@ -24,28 +24,28 @@ const HEATMAP_COLORS = {
 const SELECTED_COLOR = colors.primary || '#FF6B35';
 const SELECTED_STROKE = colors.primary || '#FF6B35';
 
-// Mapping nomi regioni: id libreria -> nome backend
+// ✅ CORRETTO: Mapping nomi regioni (ID libreria inglese -> nome backend italiano)
 const REGION_NAME_MAP = {
-  'piemonte': 'Piemonte',
-  'valle-d-aosta': "Valle d'Aosta",
-  'lombardia': 'Lombardia',
-  'trentino-alto-adige': 'Trentino-Alto Adige',
-  'veneto': 'Veneto',
-  'friuli-venezia-giulia': 'Friuli-Venezia Giulia',
-  'liguria': 'Liguria',
-  'emilia-romagna': 'Emilia-Romagna',
-  'toscana': 'Toscana',
-  'umbria': 'Umbria',
-  'marche': 'Marche',
-  'lazio': 'Lazio',
   'abruzzo': 'Abruzzo',
-  'molise': 'Molise',
-  'campania': 'Campania',
-  'puglia': 'Puglia',
+  'aosta-valley': "Valle d'Aosta",
+  'apulia': 'Puglia',
   'basilicata': 'Basilicata',
   'calabria': 'Calabria',
-  'sicilia': 'Sicilia',
-  'sardegna': 'Sardegna',
+  'campania': 'Campania',
+  'emilia-romagna': 'Emilia-Romagna',
+  'friuli-venezia-giulia': 'Friuli-Venezia Giulia',
+  'lazzio': 'Lazio',  // Nota: la libreria ha "lazzio" con doppia z
+  'liguria': 'Liguria',
+  'lombardy': 'Lombardia',
+  'marche': 'Marche',
+  'molise': 'Molise',
+  'piedmont': 'Piemonte',
+  'sardinia': 'Sardegna',
+  'sicily': 'Sicilia',
+  'trentino-south-tyrol': 'Trentino-Alto Adige',
+  'tuscany': 'Toscana',
+  'umbria': 'Umbria',
+  'veneto': 'Veneto',
 };
 
 const getRegionColor = (value, maxValue) => {
@@ -89,6 +89,7 @@ const ItalyMap = ({
     return Math.max(...data.map(d => d.total || 0));
   }, [data]);
   
+  // ✅ Crea mappa: nome backend (lowercase) -> valore
   const regionValues = useMemo(() => {
     const map = {};
     if (data && data.length > 0) {
@@ -102,17 +103,21 @@ const ItalyMap = ({
     return map;
   }, [data]);
   
+  // ✅ Trova il valore per una regione usando il mapping corretto
   const getValueForRegion = (region) => {
+    // region.id è in inglese (es. "sardinia")
+    // REGION_NAME_MAP[region.id] restituisce il nome italiano (es. "Sardegna")
     const backendName = REGION_NAME_MAP[region.id];
+    // Cerca nel regionValues usando il nome italiano lowercase
     const key = backendName?.toLowerCase();
     return regionValues[key] || 0;
   };
   
   const handleRegionPress = (region) => {
     if (onRegionPress) {
-      // Aggiungi backendName per compatibilità
       onRegionPress({
         ...region,
+        name: REGION_NAME_MAP[region.id] || region.name, // Nome italiano per display
         backendName: REGION_NAME_MAP[region.id] || region.name,
       });
     }

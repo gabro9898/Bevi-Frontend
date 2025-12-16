@@ -1,7 +1,6 @@
 // src/screens/GeneralScreen/GeneralScreen.js
 // ✅ NUOVA VERSIONE: Mappa Italia + Analytics (sostituisce classifica)
 
-
 import React, { useState, useCallback, useMemo } from 'react';
 import { 
   View, 
@@ -17,18 +16,17 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, typography, spacing, borderRadius } from '../../theme';
 
-
 // Componenti
 import ItalyMap from '../../components/ItalyMap';
 import FiltersBar, { DRINK_CATEGORIES } from '../../components/FiltersBar';
 import RegionAnalyticsPanel from '../../components/RegionAnalyticsPanel';
 import NotificationsModal from '../../components/NotificationsModal';
+
 // API
 import { 
   useGetRegionStatsQuery,
   useGetUnreadNotificationCountQuery,
 } from '../../api/beviApi';
-
 
 /**
  * Schermata Generale con Mappa Italia
@@ -37,7 +35,7 @@ const GeneralScreen = () => {
   const insets = useSafeAreaInsets();
   
   // Stati
-  const [selectedCategory, setSelectedCategory] = useState('WATER'); // Default: Acqua
+  const [selectedCategory, setSelectedCategory] = useState(null); // ✅ Default: Tutti (null = nessun filtro)
   const [selectedPeriod, setSelectedPeriod] = useState('30d');
   const [selectedRegion, setSelectedRegion] = useState(null); // { id, name, backendName }
   const [notificationsModalVisible, setNotificationsModalVisible] = useState(false);
@@ -49,17 +47,23 @@ const GeneralScreen = () => {
   });
   const unreadCount = unreadData?.data?.unreadCount || 0;
 
-  // Query statistiche regioni
+  // ✅ Query statistiche regioni - non passa category se è null o 'ALL'
+  const queryParams = useMemo(() => {
+    const params = { period: selectedPeriod };
+    // Passa category solo se è selezionata una categoria specifica
+    if (selectedCategory && selectedCategory !== 'ALL') {
+      params.category = selectedCategory;
+    }
+    return params;
+  }, [selectedPeriod, selectedCategory]);
+
   const { 
     data: regionStatsData, 
     isLoading: isLoadingStats,
     isFetching: isFetchingStats,
     error: statsError,
     refetch: refetchStats 
-  } = useGetRegionStatsQuery({
-    period: selectedPeriod,
-    category: selectedCategory,
-  });
+  } = useGetRegionStatsQuery(queryParams);
 
   // Estrai dati per la mappa
   const mapData = useMemo(() => {
@@ -110,8 +114,13 @@ const GeneralScreen = () => {
     }
   }, [refetchStats]);
 
-  // Ottieni label categoria corrente
-  const currentCategoryLabel = DRINK_CATEGORIES.find(c => c.id === selectedCategory)?.label || '';
+  // ✅ Ottieni label categoria corrente
+  const currentCategoryLabel = useMemo(() => {
+    if (!selectedCategory || selectedCategory === 'ALL') {
+      return 'Tutti';
+    }
+    return DRINK_CATEGORIES.find(c => c.id === selectedCategory)?.label || 'Tutti';
+  }, [selectedCategory]);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
