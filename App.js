@@ -1,6 +1,16 @@
 // App.js
 // ✅ Con react-native-keyboard-controller per gestione tastiera robusta
 
+// ⚠️ POLYFILL - Deve essere PRIMA di tutti gli import
+if (typeof global.DOMException === 'undefined') {
+  global.DOMException = class DOMException extends Error {
+    constructor(message, name) {
+      super(message);
+      this.name = name || 'DOMException';
+    }
+  };
+}
+
 import React, { useEffect } from 'react';
 import { StatusBar, Platform } from 'react-native';
 import { Provider } from 'react-redux';

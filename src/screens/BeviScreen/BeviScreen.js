@@ -1,6 +1,6 @@
 // src/screens/BeviScreen/BeviScreen.js
 // Schermata per registrare una bevuta con foto
-// ✅ AGGIORNATO: Upload foto su Cloudinary + Banner Ads
+// ✅ AGGIORNATO: Upload foto su Cloudinary + Banner Ads + GEOLOCALIZZAZIONE
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { 
@@ -17,6 +17,7 @@ import {
   TextInput,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as Location from 'expo-location'; // ✅ NUOVO
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { colors, typography, spacing, borderRadius, shadows } from '../../theme';
@@ -86,7 +87,6 @@ const DrinkSelector = ({ visible, onClose, onSelect, drinks, topDrinks, isLoadin
   const [activeCategory, setActiveCategory] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Filtra le bevande
   const filteredDrinks = drinks.filter(drink => {
     const matchesCategory = activeCategory === 'ALL' || drink.category === activeCategory;
     const matchesSearch = searchQuery === '' || 
@@ -95,7 +95,6 @@ const DrinkSelector = ({ visible, onClose, onSelect, drinks, topDrinks, isLoadin
     return matchesCategory && matchesSearch;
   });
 
-  // Reset quando si chiude
   const handleClose = () => {
     setActiveCategory('ALL');
     setSearchQuery('');
@@ -111,7 +110,6 @@ const DrinkSelector = ({ visible, onClose, onSelect, drinks, topDrinks, isLoadin
     >
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
-          {/* Header */}
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Cosa stai bevendo?</Text>
             <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
@@ -119,7 +117,6 @@ const DrinkSelector = ({ visible, onClose, onSelect, drinks, topDrinks, isLoadin
             </TouchableOpacity>
           </View>
 
-          {/* Barra di ricerca */}
           <View style={styles.searchContainer}>
             <Ionicons name="search" size={20} color={colors.gray} />
             <TextInput
@@ -143,7 +140,6 @@ const DrinkSelector = ({ visible, onClose, onSelect, drinks, topDrinks, isLoadin
             </View>
           ) : (
             <ScrollView showsVerticalScrollIndicator={false}>
-              {/* Top Drinks / Preferiti */}
               {topDrinks.length > 0 && searchQuery === '' && activeCategory === 'ALL' && (
                 <View style={styles.section}>
                   <View style={styles.sectionHeader}>
@@ -163,7 +159,6 @@ const DrinkSelector = ({ visible, onClose, onSelect, drinks, topDrinks, isLoadin
                 </View>
               )}
 
-              {/* Categorie */}
               <View style={styles.categoriesContainer}>
                 <ScrollView 
                   horizontal 
@@ -181,7 +176,6 @@ const DrinkSelector = ({ visible, onClose, onSelect, drinks, topDrinks, isLoadin
                 </ScrollView>
               </View>
 
-              {/* Lista bevande */}
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>
                   {activeCategory === 'ALL' ? 'Tutte le bevande' : DRINK_CATEGORIES.find(c => c.id === activeCategory)?.label}
@@ -220,6 +214,11 @@ const BeviScreen = () => {
   const [drinkSelectorVisible, setDrinkSelectorVisible] = useState(false);
   const [facing, setFacing] = useState('back');
   const [localCooldown, setLocalCooldown] = useState(0);
+  
+  // ✅ NUOVO: Stato per la posizione
+  const [currentLocation, setCurrentLocation] = useState(null);
+  const [locationStatus, setLocationStatus] = useState('idle'); // idle | loading | success | error
+  
   const cameraRef = useRef(null);
   const timerRef = useRef(null);
 
@@ -229,43 +228,79 @@ const BeviScreen = () => {
   const { data: cooldownResponse, refetch: refetchCooldown } = useGetCooldownStatusQuery();
   const { data: statsResponse } = useGetMyDrinkStatsQuery();
 
-  // Estrai drinks dalla risposta API
   const drinks = drinksResponse?.data?.drinks || [];
   
-  // Estrai top drinks dalle statistiche utente
   const extractTopDrinks = () => {
     const topDrinksData = statsResponse?.data?.topDrinks || [];
-    
     const result = [];
-    
     for (const item of topDrinksData) {
       if (!item.drink) continue;
-      
       const fullDrink = drinks.find(d => 
         d.name === item.drink.name && d.brand === item.drink.brand
       );
-      
-      if (fullDrink) {
-        result.push(fullDrink);
-      }
-      
+      if (fullDrink) result.push(fullDrink);
       if (result.length >= 6) break;
     }
-    
     return result;
   };
 
   const topDrinks = extractTopDrinks();
 
-  // Estrai cooldown dalla risposta API
   const cooldownData = cooldownResponse?.data || cooldownResponse || {};
   const serverCanDrink = cooldownData?.canDrink !== false;
   const serverWaitTime = cooldownData?.waitTime || 0;
-
-  // Stato locale per il countdown
   const canDrink = serverCanDrink && localCooldown <= 0;
 
-  // Aggiorna il cooldown locale quando arriva la risposta dal server
+  // ✅ NUOVO: Funzione per ottenere la posizione
+  const getCurrentLocation = async () => {
+    try {
+      setLocationStatus('loading');
+      
+      // Chiedi permesso
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      
+      if (status !== 'granted') {
+        console.log('📍 Permesso posizione negato');
+        setLocationStatus('error');
+        return null;
+      }
+      
+      // Ottieni posizione
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced, // Buon compromesso velocità/precisione
+      });
+      
+      console.log('📍 Posizione ottenuta:', {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      });
+      
+      setCurrentLocation({
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      });
+      setLocationStatus('success');
+      
+      return {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      };
+    } catch (error) {
+      console.log('📍 Errore posizione:', error.message);
+      setLocationStatus('error');
+      return null;
+    }
+  };
+
+  // ✅ NUOVO: Richiedi posizione quando lo schermo è in focus
+  useFocusEffect(
+    useCallback(() => {
+      refetchCooldown();
+      // Ottieni posizione in background (non blocca l'UI)
+      getCurrentLocation();
+    }, [refetchCooldown])
+  );
+
   useEffect(() => {
     if (serverWaitTime > 0) {
       setLocalCooldown(serverWaitTime);
@@ -274,7 +309,6 @@ const BeviScreen = () => {
     }
   }, [serverWaitTime, serverCanDrink]);
 
-  // Timer che decrementa ogni secondo
   useEffect(() => {
     if (timerRef.current) {
       clearInterval(timerRef.current);
@@ -300,21 +334,12 @@ const BeviScreen = () => {
     };
   }, [localCooldown > 0]);
 
-  // Refetch quando la schermata torna in focus
-  useFocusEffect(
-    useCallback(() => {
-      refetchCooldown();
-    }, [refetchCooldown])
-  );
-
-  // Formatta il tempo rimanente
   const formatCooldown = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Scatta foto e converti in base64
   const takePicture = async () => {
     if (cameraRef.current) {
       try {
@@ -338,7 +363,6 @@ const BeviScreen = () => {
         
         console.log('📸 [4] Conversione completata:', {
           lunghezzaBase64: base64Image?.length || 0,
-          inizioStringa: base64Image?.substring(0, 50) + '...',
         });
         
         const imageSize = estimateBase64Size(base64Image);
@@ -355,13 +379,15 @@ const BeviScreen = () => {
           return;
         }
         
-        console.log('✅ [6] Immagine OK, salvo in stato...');
+        // ✅ Aggiorna posizione prima di aprire il selettore
+        if (!currentLocation) {
+          await getCurrentLocation();
+        }
+        
         setPhoto(photoData);
         setPhotoBase64(base64Image);
         setCameraOpen(false);
         setDrinkSelectorVisible(true);
-        
-        console.log('✅ [7] Stato aggiornato, apro selettore bevande');
         
       } catch (error) {
         console.log('❌ Errore foto:', error);
@@ -372,7 +398,7 @@ const BeviScreen = () => {
     }
   };
 
-  // Seleziona bevanda e invia con immagine
+  // ✅ AGGIORNATO: Invia anche la posizione
   const handleDrinkSelect = async (drink) => {
     console.log('🍺 [1] Bevanda selezionata:', {
       id: drink.id,
@@ -381,7 +407,6 @@ const BeviScreen = () => {
     });
     
     if (!drink.id) {
-      console.log('❌ [2] Errore: drink.id mancante!');
       Alert.alert('Errore', 'Bevanda non valida');
       return;
     }
@@ -393,21 +418,24 @@ const BeviScreen = () => {
         drinkId: drink.id,
       };
       
-      console.log('🍺 [2] photoBase64 presente?', !!photoBase64);
+      // ✅ NUOVO: Aggiungi la posizione se disponibile
+      if (currentLocation) {
+        drinkLogData.latitude = currentLocation.latitude;
+        drinkLogData.longitude = currentLocation.longitude;
+        console.log('📍 [2] Aggiungo posizione:', currentLocation);
+      } else {
+        console.log('📍 [2] Posizione non disponibile');
+      }
       
       if (photoBase64) {
         drinkLogData.image = photoBase64;
-        console.log('🍺 [3] Aggiungo immagine alla richiesta:', {
-          lunghezzaBase64: photoBase64.length,
-          dimensioneStimata: formatFileSize(estimateBase64Size(photoBase64)),
-        });
-      } else {
-        console.log('⚠️ [3] Nessuna foto, invio senza immagine');
+        console.log('🍺 [3] Aggiungo immagine alla richiesta');
       }
       
       console.log('📤 [4] Invio richiesta createDrinkLog...', {
         drinkId: drinkLogData.drinkId,
         hasImage: !!drinkLogData.image,
+        hasLocation: !!currentLocation,
       });
       
       const result = await createDrinkLog(drinkLogData).unwrap();
@@ -415,29 +443,24 @@ const BeviScreen = () => {
       console.log('✅ [5] Risposta ricevuta:', JSON.stringify(result, null, 2));
       
       const data = result?.data || result;
+      const location = data?.drinkLog?.location;
       
-      console.log('✅ [6] Dati estratti:', {
-        drinkLogId: data?.drinkLog?.id,
-        pointsEarned: data?.drinkLog?.pointsEarned,
-        photoUrl: data?.drinkLog?.photoUrl,
-      });
+      // ✅ Messaggio con località se disponibile
+      let alertMessage = `Hai registrato: ${drink.name}\n+${data?.drinkLog?.pointsEarned || drink.basePoints} punti!`;
+      if (location?.city || location?.region) {
+        alertMessage += `\n📍 ${location.city || location.region}`;
+      }
       
-      Alert.alert(
-        '🎉 Bevuta registrata!', 
-        `Hai registrato: ${drink.name}\n+${data?.drinkLog?.pointsEarned || drink.basePoints} punti!`,
-        [{ text: 'OK', onPress: () => {
+      Alert.alert('🎉 Bevuta registrata!', alertMessage, [{ 
+        text: 'OK', 
+        onPress: () => {
           setPhoto(null);
           setPhotoBase64(null);
           refetchCooldown();
-        }}]
-      );
+        }
+      }]);
     } catch (error) {
-      console.log('❌ [ERROR] Errore registrazione:', {
-        message: error?.message,
-        status: error?.status,
-        data: error?.data,
-        fullError: JSON.stringify(error, null, 2),
-      });
+      console.log('❌ [ERROR] Errore registrazione:', error);
       Alert.alert(
         'Errore', 
         error?.data?.message || 'Impossibile registrare la bevuta'
@@ -447,21 +470,25 @@ const BeviScreen = () => {
     }
   };
 
-  // Reset
   const handleReset = () => {
     setPhoto(null);
     setPhotoBase64(null);
     setCameraOpen(false);
   };
 
-  // Apri direttamente il selettore (senza foto)
-  const handleQuickAdd = () => {
+  // ✅ AGGIORNATO: Ottieni posizione anche per quick add
+  const handleQuickAdd = async () => {
     setPhoto(null);
     setPhotoBase64(null);
+    
+    // Aggiorna posizione se non disponibile
+    if (!currentLocation) {
+      await getCurrentLocation();
+    }
+    
     setDrinkSelectorVisible(true);
   };
 
-  // Richiedi permessi camera
   if (!permission) {
     return (
       <SafeAreaView style={styles.container}>
@@ -489,7 +516,6 @@ const BeviScreen = () => {
     );
   }
 
-  // Vista Camera
   if (cameraOpen) {
     return (
       <View style={styles.cameraContainer}>
@@ -534,7 +560,6 @@ const BeviScreen = () => {
     );
   }
 
-  // Vista principale
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -562,7 +587,6 @@ const BeviScreen = () => {
           </View>
         ) : (
           <>
-            {/* ✅ Banner pubblicitario */}
             <View style={styles.bannerContainer}>
               <BannerAd />
             </View>
@@ -604,6 +628,7 @@ const BeviScreen = () => {
               Scatta una foto alla tua bevanda per registrarla e guadagnare punti!
             </Text>
 
+            {/* ✅ NUOVO: Mostra stato posizione */}
             <View style={styles.infoBox}>
               <Ionicons 
                 name={canDrink ? "checkmark-circle" : "time-outline"} 
@@ -615,6 +640,21 @@ const BeviScreen = () => {
                   ? 'Puoi registrare una bevuta!' 
                   : `Prossima bevuta tra ${formatCooldown(localCooldown)}`
                 }
+              </Text>
+            </View>
+            
+            {/* ✅ NUOVO: Indicatore posizione */}
+            <View style={[styles.infoBox, { marginTop: spacing.sm }]}>
+              <Ionicons 
+                name={locationStatus === 'success' ? "location" : locationStatus === 'loading' ? "locate" : "location-outline"} 
+                size={16} 
+                color={locationStatus === 'success' ? colors.success : locationStatus === 'error' ? colors.warning : colors.gray} 
+              />
+              <Text style={[styles.infoText, { fontSize: 12 }]}>
+                {locationStatus === 'success' && '📍 Posizione attiva'}
+                {locationStatus === 'loading' && 'Ottenendo posizione...'}
+                {locationStatus === 'error' && 'Posizione non disponibile'}
+                {locationStatus === 'idle' && 'Posizione non richiesta'}
               </Text>
             </View>
           </>
@@ -673,14 +713,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: spacing.xl,
   },
-
-  // ✅ Banner Ad
   bannerContainer: {
     width: '100%',
     marginBottom: spacing.lg,
   },
-
-  // Main Button
   mainButton: {
     width: 180,
     height: 180,
@@ -702,7 +738,6 @@ const styles = StyleSheet.create({
   mainButtonTextDisabled: {
     color: colors.gray,
   },
-  
   quickAddButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -714,7 +749,6 @@ const styles = StyleSheet.create({
     color: colors.primary,
     marginLeft: spacing.xs,
   },
-  
   description: {
     ...typography.body,
     textAlign: 'center',
@@ -735,8 +769,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginLeft: spacing.sm,
   },
-
-  // Permission
   permissionTitle: {
     ...typography.h3,
     marginTop: spacing.lg,
@@ -758,8 +790,6 @@ const styles = StyleSheet.create({
     ...typography.button,
     color: colors.white,
   },
-
-  // Camera
   cameraContainer: {
     flex: 1,
   },
@@ -805,8 +835,6 @@ const styles = StyleSheet.create({
     borderRadius: 32,
     backgroundColor: colors.white,
   },
-
-  // Photo Preview
   photoPreview: {
     alignItems: 'center',
   },
@@ -843,8 +871,6 @@ const styles = StyleSheet.create({
     color: colors.white,
     marginLeft: spacing.xs,
   },
-
-  // Modal
   modalOverlay: {
     flex: 1,
     backgroundColor: colors.overlay,
@@ -871,8 +897,6 @@ const styles = StyleSheet.create({
   closeButton: {
     padding: spacing.sm,
   },
-  
-  // Search
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -889,8 +913,6 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.textPrimary,
   },
-
-  // Categories
   categoriesContainer: {
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
@@ -924,8 +946,6 @@ const styles = StyleSheet.create({
     color: colors.white,
     fontWeight: '600',
   },
-
-  // Sections
   section: {
     paddingHorizontal: spacing.lg,
     marginBottom: spacing.lg,
@@ -939,8 +959,6 @@ const styles = StyleSheet.create({
     ...typography.h4,
     marginLeft: spacing.xs,
   },
-
-  // Drinks Grid
   drinksGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -998,8 +1016,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 10,
   },
-
-  // Empty & Loading
   modalLoading: {
     flex: 1,
     justifyContent: 'center',
@@ -1019,8 +1035,6 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.textSecondary,
   },
-
-  // Loading Overlay
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: colors.overlay,

@@ -1,12 +1,17 @@
 // src/api/beviApi.js
 // RTK Query API - Tutti gli endpoints del backend Bevi
-// ✅ VERSIONE CON UPLOAD CLOUDINARY + APPLE AUTH
+// ✅ AGGIORNATO: Con endpoint statistiche geografiche per mappa
 
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// URL base del backend (deve corrispondere a apiClient.js)
-const BASE_URL = 'https://bevi-backend.onrender.com/api';
+// URL base del backend
+// 🔴 PRODUZIONE (Render) - COMMENTATO PER TEST LOCALE
+ const BASE_URL = 'https://bevi-backend.onrender.com/api';
+
+// 🟢 SVILUPPO LOCALE - USA QUESTO PER TESTARE
+//const BASE_URL = 'http://172.20.10.7:3000/api'; // <-- METTI IL TUO IP QUI!
+
 const TOKEN_KEY = '@bevi_auth_token';
 
 // ==================== CONFIGURAZIONE BASE ====================
@@ -45,10 +50,9 @@ export const beviApi = createApi({
     'Wheel',
     'Analytics',
     'Cooldown',
+    'GeoStats', // ✅ NUOVO TAG per statistiche geografiche
   ],
 
-  // ✅ FIX: Disabilita refetch automatico globale per i messaggi
-  // I messaggi arrivano via WebSocket, non serve polling
   refetchOnFocus: false,
   refetchOnReconnect: false,
 
@@ -167,7 +171,6 @@ export const beviApi = createApi({
       query: (userId) => `/users/${userId}/stats`,
     }),
 
-    // Elimina account
     deleteMyAccount: builder.mutation({
       query: ({ password, confirmation }) => ({
         url: '/users/account',
@@ -179,7 +182,6 @@ export const beviApi = createApi({
 
     // ==================== UPLOAD IMMAGINI (CLOUDINARY) ====================
 
-    // Upload avatar profilo
     uploadAvatar: builder.mutation({
       query: ({ userId, image }) => ({
         url: '/upload',
@@ -193,7 +195,6 @@ export const beviApi = createApi({
       invalidatesTags: ['User'],
     }),
 
-    // Upload immagine gruppo
     uploadGroupImage: builder.mutation({
       query: ({ groupId, image }) => ({
         url: '/upload',
@@ -207,7 +208,6 @@ export const beviApi = createApi({
       invalidatesTags: ['Groups'],
     }),
 
-    // Upload immagine bevuta (pre-upload separato)
     uploadDrinkImage: builder.mutation({
       query: ({ image }) => ({
         url: '/upload/drink-image',
@@ -216,7 +216,6 @@ export const beviApi = createApi({
       }),
     }),
 
-    // Elimina immagine bevuta
     deleteDrinkImage: builder.mutation({
       query: (publicId) => ({
         url: `/upload/drink-image/${encodeURIComponent(publicId)}`,
@@ -224,8 +223,67 @@ export const beviApi = createApi({
       }),
     }),
 
-    // ==================== LEADERBOARD ====================
+    // ==================== STATISTICHE GEOGRAFICHE (NUOVO) ====================
 
+    // Summary per homepage mappa
+    getGeoStatsSummary: builder.query({
+      query: ({ period = '30d', country = 'IT' } = {}) => 
+        `/stats/summary?period=${period}&country=${country}`,
+      providesTags: ['GeoStats'],
+    }),
+
+    // Statistiche per regione
+    getRegionStats: builder.query({
+      query: ({ period = '30d', category, country = 'IT' } = {}) => {
+        let url = `/stats/regions?period=${period}&country=${country}`;
+        if (category) url += `&category=${category}`;
+        return url;
+      },
+      providesTags: ['GeoStats'],
+    }),
+
+    // Statistiche per provincia (filtrate per regione)
+    getProvinceStats: builder.query({
+      query: ({ region, period = '30d', category, country = 'IT' }) => {
+        let url = `/stats/provinces?region=${encodeURIComponent(region)}&period=${period}&country=${country}`;
+        if (category) url += `&category=${category}`;
+        return url;
+      },
+      providesTags: ['GeoStats'],
+    }),
+
+    // Statistiche per città
+    getCityStats: builder.query({
+      query: ({ region, province, period = '30d', category, country = 'IT' }) => {
+        let url = `/stats/cities?region=${encodeURIComponent(region)}&period=${period}&country=${country}`;
+        if (province) url += `&province=${encodeURIComponent(province)}`;
+        if (category) url += `&category=${category}`;
+        return url;
+      },
+      providesTags: ['GeoStats'],
+    }),
+
+    // Time series (storico mensile)
+    getGeoTimeSeries: builder.query({
+      query: ({ region, province, city, months = 6, category, country = 'IT' } = {}) => {
+        let url = `/stats/timeseries?months=${months}&country=${country}`;
+        if (region) url += `&region=${encodeURIComponent(region)}`;
+        if (province) url += `&province=${encodeURIComponent(province)}`;
+        if (city) url += `&city=${encodeURIComponent(city)}`;
+        if (category) url += `&category=${category}`;
+        return url;
+      },
+      providesTags: ['GeoStats'],
+    }),
+
+    // Lista regioni disponibili
+    getAvailableRegions: builder.query({
+      query: () => '/stats/regions/list',
+      providesTags: ['GeoStats'],
+    }),
+
+    // ==================== LEADERBOARD (COMMENTATO - NON PIÙ USATO) ====================
+    /*
     getLeaderboardCategories: builder.query({
       query: () => '/leaderboard/categories',
     }),
@@ -264,6 +322,7 @@ export const beviApi = createApi({
       query: () => '/leaderboard/streaks',
       providesTags: ['Leaderboard'],
     }),
+    */
 
     // ==================== DRINKS ====================
 
@@ -303,7 +362,7 @@ export const beviApi = createApi({
         method: 'POST',
         body: drinkLogData,
       }),
-      invalidatesTags: ['DrinkLogs', 'Leaderboard', 'User', 'Analytics', 'Cooldown'],
+      invalidatesTags: ['DrinkLogs', 'Leaderboard', 'User', 'Analytics', 'Cooldown', 'GeoStats'],
     }),
 
     getMyDrinkLogs: builder.query({
@@ -331,7 +390,7 @@ export const beviApi = createApi({
         url: `/drink-logs/${id}`,
         method: 'DELETE',
       }),
-      invalidatesTags: ['DrinkLogs', 'Leaderboard', 'Analytics', 'Cooldown'],
+      invalidatesTags: ['DrinkLogs', 'Leaderboard', 'Analytics', 'Cooldown', 'GeoStats'],
     }),
 
     // ==================== GROUPS ====================
@@ -634,8 +693,17 @@ export const {
   useUploadGroupImageMutation,
   useUploadDrinkImageMutation,
   useDeleteDrinkImageMutation,
+
+  // ✅ NUOVO: Statistiche Geografiche
+  useGetGeoStatsSummaryQuery,
+  useGetRegionStatsQuery,
+  useGetProvinceStatsQuery,
+  useGetCityStatsQuery,
+  useGetGeoTimeSeriesQuery,
+  useGetAvailableRegionsQuery,
   
-  // Leaderboard
+  // Leaderboard (commentati - non più usati nella schermata Generale)
+  /*
   useGetLeaderboardCategoriesQuery,
   useGetGlobalLeaderboardQuery,
   useGetDailyLeaderboardQuery,
@@ -644,6 +712,7 @@ export const {
   useGetCategoryLeaderboardQuery,
   useGetTopDrinkersQuery,
   useGetStreakLeaderboardQuery,
+  */
   
   // Drinks
   useGetAllDrinksQuery,
